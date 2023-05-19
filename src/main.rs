@@ -6,6 +6,7 @@ use obj::{Obj, load_obj};
 use vulkano::{memory::allocator::{StandardMemoryAllocator, AllocationCreateInfo, MemoryUsage}, buffer::{Buffer, BufferCreateInfo, BufferUsage}};
 
 mod ctx;
+mod input;
 fn main() -> Result<()> {
     env_logger::init();
 
@@ -42,7 +43,8 @@ mod vs {
             #version 460
 
             layout(push_constant) uniform PushConstants {
-                mat4 view_proj;
+                mat4 proj;
+                mat4 view;
             } push_constants;
 
             layout(location = 0) in vec3 position;
@@ -51,7 +53,7 @@ mod vs {
             layout(location = 0) out vec3 out_normal;
 
             void main() {
-                gl_Position = push_constants.view_proj * vec4(position, 1.0);
+                gl_Position = push_constants.proj * push_constants.view * vec4(position, 1.0);
                 out_normal = normal;
             }
         ",

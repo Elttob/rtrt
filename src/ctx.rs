@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use glam::vec2;
 use vulkano_win::VkSurfaceBuild;
 use vulkano::{VulkanLibrary, instance::{Instance, InstanceCreateInfo}, device::{DeviceExtensions, Device, DeviceCreateInfo, QueueFlags, physical::{PhysicalDeviceType, PhysicalDevice}, QueueCreateInfo, Queue}, swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, AcquireError, SwapchainPresentInfo}, image::{ImageUsage, SwapchainImage, view::ImageView}, render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass}, sync::{future::FenceSignalFuture, self, GpuFuture, FlushError}, pipeline::{graphics::{viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState, vertex_input::Vertex}, GraphicsPipeline, Pipeline}, shader::ShaderModule, buffer::{BufferContents, Subbuffer}, command_buffer::{allocator::StandardCommandBufferAllocator, PrimaryAutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}};
 use winit::{event_loop::{EventLoop, ControlFlow}, window::{WindowBuilder, Window}, event::{Event, WindowEvent}};
+
+use crate::input::Input;
 
 pub struct DeviceCtx {
     event_loop: EventLoop<()>,
@@ -131,7 +134,8 @@ pub struct PresentCtx {
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
     command_buffer_allocator: StandardCommandBufferAllocator,
-    command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>
+    command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
+    push_constants: crate::vs::PushConstants
 }
 
 impl PresentCtx {
@@ -197,6 +201,7 @@ impl PresentCtx {
         pipeline: &Arc<GraphicsPipeline>,
         framebuffers: &Vec<Arc<Framebuffer>>,
         vertex_buffer: &Subbuffer<[MyVertex]>,
+        push_constants: crate::vs::PushConstants
     ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
         framebuffers.iter().map(|framebuffer| {
             let mut builder = AutoCommandBufferBuilder::primary(
@@ -205,10 +210,6 @@ impl PresentCtx {
                 CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
             )
             .unwrap();
-
-            let push_constants = crate::vs::PushConstants {
-                view_proj: glam::Mat4::perspective_lh(1.5, 1280.0/720.0, 0.1, 100.0).to_cols_array_2d()
-            };
     
             builder.begin_render_pass(
                 RenderPassBeginInfo {
@@ -269,6 +270,14 @@ impl PresentCtx {
             render_pass.clone(),
             viewport.clone(),
         );
+        let push_constants = crate::vs::PushConstants {
+            proj: 
+                (glam::Mat4::from_scale(glam::vec3(1.0, -1.0, 1.0)) * glam::Mat4::perspective_lh(1.5, dimensions.width as f32 / dimensions.height as f32, 0.1, 100.0))
+                .to_cols_array_2d(),
+            view: 
+                (glam::Mat4::look_at_lh(glam::vec3(1.0, 1.0, 1.0), glam::vec3(0.0, 0.0, 0.0), glam::vec3(0.0, 1.0, 0.0)))
+                .to_cols_array_2d()
+        };
 
         let command_buffer_allocator = StandardCommandBufferAllocator::new(device_ctx.device.clone(), Default::default());
         let command_buffers = Self::get_command_buffers(
@@ -276,9 +285,9 @@ impl PresentCtx {
             &device_ctx.queue,
             &pipeline,
             &framebuffers,
-            vertex_buffer
+            vertex_buffer,
+            push_constants.clone()
         );
-        
 
         Ok(Self {
             swapchain,
@@ -288,7 +297,8 @@ impl PresentCtx {
             vs,
             fs,
             command_buffer_allocator,
-            command_buffers
+            command_buffers,
+            push_constants
         })
     }
 
@@ -298,30 +308,57 @@ impl PresentCtx {
         vertex_buffer: Subbuffer<[MyVertex]>
     ) {
         let mut window_resized = false;
+        let mut cursor_over_window = false;
         let mut recreate_swapchain = false;
 
         let frames_in_flight = self.swapchain_images.len();
         let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
         let mut previous_fence_i = 0;
 
+        let mut input = Input::new(vec2(0.0, 0.0));
+
         device_ctx.event_loop.run(move |event, _, control_flow| match event {
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                *control_flow = ControlFlow::Exit;
+            Event::WindowEvent { ref event, window_id } if window_id == device_ctx.window.id() => match event {
+                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
+                WindowEvent::Resized(physical_size) => {
+                    window_resized = true;
+                },
+                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                    window_resized = true;
+                },
+                WindowEvent::CursorEntered { .. } => {
+                    cursor_over_window = true;
+                },
+                WindowEvent::CursorLeft { .. } => {
+                    cursor_over_window = false;
+                },
+                _ => {
+                    if device_ctx.window.has_focus() && cursor_over_window {
+                        input.process_window_events(event);
+                    }
+                }
             },
-            Event::WindowEvent {
-                event: WindowEvent::Resized(_),
-                ..
-            } => {
-                window_resized = true;
+            Event::DeviceEvent { ref event, .. } => {
+                if device_ctx.window.has_focus() && cursor_over_window {
+                    input.process_device_events(event);
+                    let window_size = device_ctx.window.inner_size();
+                    device_ctx.window.set_cursor_position(winit::dpi::PhysicalPosition::new(
+                        window_size.width / 2,
+                        window_size.height / 2
+                    )).expect("Platform does not support setting the cursor position");
+                }
             },
+
+
+
             Event::MainEventsCleared => {
                 if window_resized || recreate_swapchain {
                     recreate_swapchain = false;
 
                     let new_dimensions = device_ctx.window.inner_size();
+                    self.push_constants.proj = 
+                        (glam::Mat4::from_scale(glam::vec3(1.0, -1.0, 1.0)) * glam::Mat4::perspective_lh(1.5, new_dimensions.width as f32 / new_dimensions.height as f32, 0.1, 100.0))
+                        .to_cols_array_2d();
 
                     let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
                         image_extent: new_dimensions.into(),
@@ -350,7 +387,8 @@ impl PresentCtx {
                             &device_ctx.queue,
                             &new_pipeline,
                             &new_framebuffers,
-                            &vertex_buffer
+                            &vertex_buffer,
+                            self.push_constants.clone()
                         );
                     }
                 }
