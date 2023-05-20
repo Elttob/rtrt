@@ -1,9 +1,9 @@
 use anyhow::Result;
-use vkw::{MessageSeverityFlags, MessageTypeFlags};
 use winit::{window::{WindowBuilder, Window}, event_loop::EventLoop};
 
-mod vkw;
-mod physical_devices;
+use crate::device_ctx::{DeviceCtx, MessageSeverityFlags, MessageTypeFlags};
+
+mod device_ctx;
 
 fn create_window() -> Result<(EventLoop<()>, Window)> {
     let event_loop = EventLoop::new();
@@ -28,23 +28,29 @@ fn create_window() -> Result<(EventLoop<()>, Window)> {
 }
 
 fn main() -> Result<()> {
-    std::env::set_var("RUST_LOG", "debug");
+    std::env::set_var("RUST_LOG", "DEBUG");
     env_logger::init();
     log::debug!("Starting!");
 
-    let (event_loop, window) = create_window()?;
+    let (_event_loop, _window) = create_window()?;
 
     let entry = ash::Entry::linked();
-    let instance = vkw::Instance::new(
+    let _device_ctx = DeviceCtx::new(
         &entry,
         Default::default(),
         &[
             ash::extensions::khr::Surface::name(),
             ash::extensions::khr::Win32Surface::name()
         ],
-        Some((MessageSeverityFlags::all(), MessageTypeFlags::all()))
+        Some((MessageSeverityFlags {
+            warning: true,
+            error: true,
+            ..Default::default()
+        }, MessageTypeFlags {
+            validation: true,
+            ..Default::default()
+        }))
     )?;
-    let physical_device = physical_devices::select((&instance).into());
     
     Ok(())
 }

@@ -178,7 +178,8 @@ impl DebugUtilsMessenger {
         callback_data: *const DebugUtilsMessengerCallbackDataEXT,
         _user_data: *mut c_void,
     ) -> Bool32 {
-        let severity_str = if let Ok(message_severity) = MessageSeverity::try_from(message_severity) {
+        let message_severity = MessageSeverity::try_from(message_severity);
+        let severity_str = if let Ok(message_severity) = &message_severity {
             message_severity.to_string()
         } else {
             "(vkw: unknown)".to_string()
@@ -188,7 +189,14 @@ impl DebugUtilsMessenger {
         } else {
             "(vkw: could not read callback_data)"
         };
-        log::debug!("[VK/{}] {}", severity_str, message); 
+
+        match message_severity.unwrap_or(MessageSeverity::Warning) {
+            MessageSeverity::Error => log::error!("[VK/{}] {}", severity_str, message),
+            MessageSeverity::Warning => log::warn!("[VK/{}] {}", severity_str, message),
+            MessageSeverity::Info => log::info!("[VK/{}] {}", severity_str, message),
+            MessageSeverity::Verbose => log::debug!("[VK/{}] {}", severity_str, message),
+        }
+        
         vk::FALSE
     }
 
