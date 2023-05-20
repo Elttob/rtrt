@@ -1,12 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use glam::vec2;
-use vulkano_win::VkSurfaceBuild;
-use vulkano::{VulkanLibrary, instance::{Instance, InstanceCreateInfo}, device::{DeviceExtensions, Device, DeviceCreateInfo, QueueFlags, physical::{PhysicalDeviceType, PhysicalDevice}, QueueCreateInfo, Queue}, swapchain::{Swapchain, SwapchainCreateInfo, Surface, AcquireError, SwapchainPresentInfo}, image::{ImageUsage, SwapchainImage, view::ImageView}, render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass}, sync::{future::FenceSignalFuture, self, GpuFuture, FlushError}, pipeline::{graphics::{viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState, vertex_input::Vertex}, GraphicsPipeline, Pipeline}, shader::ShaderModule, buffer::Subbuffer, command_buffer::{allocator::StandardCommandBufferAllocator, PrimaryAutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}};
-use winit::{event_loop::{EventLoop, ControlFlow}, window::{WindowBuilder, Window}, event::{Event, WindowEvent}, dpi::PhysicalSize};
+use vulkano::{VulkanLibrary, instance::{Instance, InstanceCreateInfo}, device::{DeviceExtensions, Device, DeviceCreateInfo, QueueFlags, physical::{PhysicalDeviceType, PhysicalDevice}, QueueCreateInfo, Queue}, swapchain::{Swapchain, SwapchainCreateInfo, Surface, AcquireError, SwapchainPresentInfo}, image::{ImageUsage, SwapchainImage, view::ImageView}, render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass}, sync::{future::FenceSignalFuture, self, GpuFuture, FlushError}, pipeline::{graphics::{viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState, vertex_input::Vertex}, GraphicsPipeline}, shader::ShaderModule, command_buffer::{allocator::StandardCommandBufferAllocator}};
+use winit::{window::{Window}, dpi::PhysicalSize};
 
-use crate::{input::Input, scene::{GeoVertex, Scene}};
+use crate::{scene::{GeoVertex, Scene}};
 
 pub struct DeviceCtx {
     surface: Arc<Surface>,
@@ -96,7 +94,7 @@ pub struct PresentCtx {
     swapchain: Arc<Swapchain>,
     swapchain_images: Vec<Arc<SwapchainImage>>,
     swapchain_dimensions: PhysicalSize<u32>,
-    swapchain_fences: Vec<Option<Arc<FenceSignalFuture<_>>>>,
+    swapchain_fences: Vec<Option<Arc<FenceSignalFuture<Box<dyn GpuFuture>>>>>,
     last_image_index: u32,
 
     render_pass: Arc<RenderPass>,
@@ -301,15 +299,24 @@ impl PresentCtx {
         device_ctx: &DeviceCtx,
         scene: &Scene
     ) -> Result<RenderStatus> {
+        let mut return_status = RenderStatus {
+            rendered: true,
+            needs_recreate: false
+        };
+
         let (next_image_index, suboptimal, acquire_future) = match vulkano::swapchain::acquire_next_image(self.swapchain.clone(), None) {
             Ok(r) => r,
             Err(AcquireError::OutOfDate) => return Ok(RenderStatus { rendered: false, needs_recreate: true }),
             Err(e) => panic!("failed to acquire next image: {e}"),
         };
+        if suboptimal {
+            return_status.needs_recreate = true;
+        }
         if let Some(image_fence) = &self.swapchain_fences[next_image_index as usize] {
             image_fence.wait(None).unwrap();
         }
-        let previous_future = match self.swapchain_fences[self.last_image_index as usize].clone() {
+        let command_buffer = scene.build_command_buffer(&self.command_buffer_allocator, &device_ctx.queue, &self.pipeline, &self.framebuffers[next_image_index as usize]);
+        let future = match self.swapchain_fences[self.last_image_index as usize].clone() {
             None => {
                 let mut now = sync::now(device_ctx.device.clone());
                 now.cleanup_finished();
@@ -317,24 +324,19 @@ impl PresentCtx {
             }
             Some(fence) => fence.boxed(),
         };
-        let command_buffer = scene.build_command_buffer(&self.command_buffer_allocator, &device_ctx.queue, &self.pipeline, &self.framebuffers[next_image_index as usize]);
-        let future = previous_future
+
+        let future = future
             .join(acquire_future)
             .then_execute(device_ctx.queue.clone(), command_buffer)
             .unwrap()
             .then_swapchain_present(
                 device_ctx.queue.clone(),
                 SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), next_image_index),
-            )
-            .then_signal_fence_and_flush();
+            );
 
-        let mut return_status = RenderStatus {
-            rendered: true,
-            needs_recreate: suboptimal
-        };
-
+        let future = (Box::new(future) as Box<dyn GpuFuture>).then_signal_fence_and_flush();
         self.swapchain_fences[next_image_index as usize] = match future {
-            Ok(value) => Some(Arc::new(value.boxed())),
+            Ok(value) => Some(Arc::new(value)),
             Err(FlushError::OutOfDate) => {
                 return_status.needs_recreate = true;
                 None

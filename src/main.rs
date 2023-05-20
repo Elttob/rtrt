@@ -74,13 +74,11 @@ fn main() -> Result<()> {
                 }
             },
             Event::MainEventsCleared => {
-                present_ctx.render(&device_ctx, &scene);
+                present_ctx.render(&device_ctx, &scene).unwrap();
             }
             _ => (),
         });
     }
-
-    Ok(())
 }
 
 mod vs {
