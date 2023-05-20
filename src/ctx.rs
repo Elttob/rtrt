@@ -3,16 +3,13 @@ use std::sync::Arc;
 use anyhow::Result;
 use glam::vec2;
 use vulkano_win::VkSurfaceBuild;
-use vulkano::{VulkanLibrary, instance::{Instance, InstanceCreateInfo}, device::{DeviceExtensions, Device, DeviceCreateInfo, QueueFlags, physical::{PhysicalDeviceType, PhysicalDevice}, QueueCreateInfo, Queue}, swapchain::{Swapchain, SwapchainCreateInfo, Surface, SwapchainCreationError, AcquireError, SwapchainPresentInfo}, image::{ImageUsage, SwapchainImage, view::ImageView}, render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass}, sync::{future::FenceSignalFuture, self, GpuFuture, FlushError}, pipeline::{graphics::{viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState, vertex_input::Vertex}, GraphicsPipeline, Pipeline}, shader::ShaderModule, buffer::{BufferContents, Subbuffer}, command_buffer::{allocator::StandardCommandBufferAllocator, PrimaryAutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}};
-use winit::{event_loop::{EventLoop, ControlFlow}, window::{WindowBuilder, Window}, event::{Event, WindowEvent}};
+use vulkano::{VulkanLibrary, instance::{Instance, InstanceCreateInfo}, device::{DeviceExtensions, Device, DeviceCreateInfo, QueueFlags, physical::{PhysicalDeviceType, PhysicalDevice}, QueueCreateInfo, Queue}, swapchain::{Swapchain, SwapchainCreateInfo, Surface, AcquireError, SwapchainPresentInfo}, image::{ImageUsage, SwapchainImage, view::ImageView}, render_pass::{RenderPass, Framebuffer, FramebufferCreateInfo, Subpass}, sync::{future::FenceSignalFuture, self, GpuFuture, FlushError}, pipeline::{graphics::{viewport::{Viewport, ViewportState}, input_assembly::InputAssemblyState, vertex_input::Vertex}, GraphicsPipeline, Pipeline}, shader::ShaderModule, buffer::Subbuffer, command_buffer::{allocator::StandardCommandBufferAllocator, PrimaryAutoCommandBuffer, AutoCommandBufferBuilder, CommandBufferUsage, RenderPassBeginInfo, SubpassContents}};
+use winit::{event_loop::{EventLoop, ControlFlow}, window::{WindowBuilder, Window}, event::{Event, WindowEvent}, dpi::PhysicalSize};
 
-use crate::input::Input;
+use crate::{input::Input, scene::{GeoVertex, Scene}};
 
 pub struct DeviceCtx {
-    event_loop: EventLoop<()>,
     surface: Arc<Surface>,
-    window: Arc<Window>,
-
     physical_device: Arc<PhysicalDevice>,
     pub device: Arc<Device>,
     queue: Arc<Queue>
@@ -55,7 +52,9 @@ impl DeviceCtx {
             .expect("no device available")
     }
 
-    pub fn new() -> Result<Self> {
+    pub fn new(
+        window: Arc<Window>
+    ) -> Result<Self> {
         let library = VulkanLibrary::new()?;
         let required_extensions = vulkano_win::required_extensions(&library);
         let instance = Instance::new(
@@ -65,28 +64,7 @@ impl DeviceCtx {
                 ..Default::default()
             }
         )?;
-
-        let event_loop = EventLoop::new();
-        let surface = WindowBuilder::new()
-            .with_title("Real Time Ray Tracing")
-            .with_inner_size(winit::dpi::LogicalSize::new(1280, 720))
-            .with_visible(false)
-            .build_vk_surface(&event_loop, instance.clone())
-            .unwrap();
-        let window = surface.object().unwrap().clone().downcast::<Window>().unwrap();
-        let monitor = window.current_monitor().unwrap_or(
-            window.primary_monitor().unwrap_or(
-                window.available_monitors().next().expect("Couldn't find a suitable monitor.")
-            )
-        );
-        let monitor_size = monitor.size();
-        let window_size = window.outer_size();
-        window.set_outer_position(winit::dpi::PhysicalPosition::new(
-            (monitor_size.width - window_size.width) / 2,
-            (monitor_size.height - window_size.height) / 2
-        ));
-        window.set_visible(true);
-
+        let surface = vulkano_win::create_surface_from_winit(window, instance.clone())?;
         let device_extensions = DeviceExtensions {
             khr_swapchain: true,
             ..DeviceExtensions::empty()
@@ -106,10 +84,7 @@ impl DeviceCtx {
         let queue = queues.next().unwrap();
 
         Ok(Self {
-            event_loop,
             surface,
-            window,
-
             physical_device,
             device,
             queue
@@ -117,25 +92,25 @@ impl DeviceCtx {
     }
 }
 
-#[derive(BufferContents, Vertex)]
-#[repr(C)]
-pub struct MyVertex {
-    #[format(R32G32B32_SFLOAT)]
-    pub position: [f32; 3],
-    #[format(R32G32B32_SFLOAT)]
-    pub normal: [f32; 3],
-}
-
 pub struct PresentCtx {
     swapchain: Arc<Swapchain>,
     swapchain_images: Vec<Arc<SwapchainImage>>,
+    swapchain_dimensions: PhysicalSize<u32>,
+    swapchain_fences: Vec<Option<Arc<FenceSignalFuture<_>>>>,
+    last_image_index: u32,
+
     render_pass: Arc<RenderPass>,
+    framebuffers: Vec<Arc<Framebuffer>>,
     viewport: Viewport,
     vs: Arc<ShaderModule>,
     fs: Arc<ShaderModule>,
-    command_buffer_allocator: StandardCommandBufferAllocator,
-    command_buffers: Vec<Arc<PrimaryAutoCommandBuffer>>,
-    push_constants: crate::vs::PushConstants
+    pipeline: Arc<GraphicsPipeline>,
+    command_buffer_allocator: StandardCommandBufferAllocator
+}
+
+pub struct RenderStatus {
+    pub rendered: bool,
+    pub needs_recreate: bool
 }
 
 impl PresentCtx {
@@ -185,7 +160,7 @@ impl PresentCtx {
         viewport: Viewport,
     ) -> Arc<GraphicsPipeline> {
         GraphicsPipeline::start()
-            .vertex_input_state(MyVertex::per_vertex())
+            .vertex_input_state(GeoVertex::per_vertex())
             .vertex_shader(vs.entry_point("main").unwrap(), ())
             .input_assembly_state(InputAssemblyState::new())
             .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
@@ -195,49 +170,48 @@ impl PresentCtx {
             .unwrap()
     }
 
-    fn get_command_buffers(
-        command_buffer_allocator: &StandardCommandBufferAllocator,
-        queue: &Arc<Queue>,
-        pipeline: &Arc<GraphicsPipeline>,
-        framebuffers: &Vec<Arc<Framebuffer>>,
-        vertex_buffer: &Subbuffer<[MyVertex]>,
-        push_constants: crate::vs::PushConstants
-    ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
-        framebuffers.iter().map(|framebuffer| {
-            let mut builder = AutoCommandBufferBuilder::primary(
-                command_buffer_allocator,
-                queue.queue_family_index(),
-                CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
-            )
-            .unwrap();
+    // fn get_command_buffers(
+    //     command_buffer_allocator: &StandardCommandBufferAllocator,
+    //     queue: &Arc<Queue>,
+    //     pipeline: &Arc<GraphicsPipeline>,
+    //     framebuffers: &Vec<Arc<Framebuffer>>,
+    //     vertex_buffer: &Subbuffer<[GeoVertex]>,
+    //     push_constants: crate::vs::PushConstants
+    // ) -> Vec<Arc<PrimaryAutoCommandBuffer>> {
+    //     framebuffers.iter().map(|framebuffer| {
+    //         let mut builder = AutoCommandBufferBuilder::primary(
+    //             command_buffer_allocator,
+    //             queue.queue_family_index(),
+    //             CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
+    //         )
+    //         .unwrap();
     
-            builder.begin_render_pass(
-                RenderPassBeginInfo {
-                    clear_values: vec![Some([0.3, 0.5, 0.7, 1.0].into())],
-                    ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                },
-                SubpassContents::Inline,
-            )
-            .unwrap()
-            .bind_pipeline_graphics(pipeline.clone())
-            .bind_vertex_buffers(0, vertex_buffer.clone())
-            .push_constants(pipeline.layout().clone(), 0, push_constants)
-            .draw(vertex_buffer.len() as u32, 1, 0, 0)
-            .unwrap()
-            .end_render_pass()
-            .unwrap();
+    //         builder.begin_render_pass(
+    //             RenderPassBeginInfo {
+    //                 clear_values: vec![Some([0.3, 0.5, 0.7, 1.0].into())],
+    //                 ..RenderPassBeginInfo::framebuffer(framebuffer.clone())
+    //             },
+    //             SubpassContents::Inline,
+    //         )
+    //         .unwrap()
+    //         .bind_pipeline_graphics(pipeline.clone())
+    //         .bind_vertex_buffers(0, vertex_buffer.clone())
+    //         .push_constants(pipeline.layout().clone(), 0, push_constants)
+    //         .draw(vertex_buffer.len() as u32, 1, 0, 0)
+    //         .unwrap()
+    //         .end_render_pass()
+    //         .unwrap();
     
-            Arc::new(builder.build().unwrap())
-        })
-        .collect()
-    }
+    //         Arc::new(builder.build().unwrap())
+    //     })
+    //     .collect()
+    // }
 
     pub fn new(
         device_ctx: &DeviceCtx,
-        vertex_buffer: &Subbuffer<[MyVertex]>,
+        dimensions: PhysicalSize<u32>
     ) -> Result<Self> {
         let caps = device_ctx.physical_device.surface_capabilities(&device_ctx.surface, Default::default())?;
-        let dimensions = device_ctx.window.inner_size();
         let composite_alpha = caps.supported_composite_alpha.into_iter().next().ok_or(anyhow::anyhow!("no composite alpha found"))?;
         let image_format = Some(device_ctx.physical_device.surface_formats(&device_ctx.surface, Default::default())?[0].0);
         let (swapchain, swapchain_images) = Swapchain::new(
@@ -252,13 +226,14 @@ impl PresentCtx {
                 ..Default::default()
             }
         )?;
+        let swapchain_fences = vec![None; swapchain_images.len()];
 
         let render_pass = Self::get_render_pass(device_ctx.device.clone(), swapchain.clone());
         let framebuffers = Self::get_framebuffers(&swapchain_images, render_pass.clone());
 
         let viewport = Viewport {
             origin: [0.0, 0.0],
-            dimensions: device_ctx.window.inner_size().into(),
+            dimensions: dimensions.into(),
             depth_range: 0.0..1.0,
         };
         let vs = crate::vs::load(device_ctx.device.clone())?;
@@ -270,184 +245,107 @@ impl PresentCtx {
             render_pass.clone(),
             viewport.clone(),
         );
-        let push_constants = crate::vs::PushConstants {
-            proj: 
-                (glam::Mat4::from_scale(glam::vec3(1.0, -1.0, 1.0)) * glam::Mat4::perspective_lh(1.5, dimensions.width as f32 / dimensions.height as f32, 0.1, 100.0))
-                .to_cols_array_2d(),
-            view: 
-                (glam::Mat4::look_at_lh(glam::vec3(1.0, 1.0, 1.0), glam::vec3(0.0, 0.0, 0.0), glam::vec3(0.0, 1.0, 0.0)))
-                .to_cols_array_2d()
-        };
 
         let command_buffer_allocator = StandardCommandBufferAllocator::new(device_ctx.device.clone(), Default::default());
-        let command_buffers = Self::get_command_buffers(
-            &command_buffer_allocator,
-            &device_ctx.queue,
-            &pipeline,
-            &framebuffers,
-            vertex_buffer,
-            push_constants.clone()
-        );
 
         Ok(Self {
             swapchain,
             swapchain_images,
+            swapchain_dimensions: dimensions,
+            swapchain_fences,
+            last_image_index: 0,
             render_pass,
+            framebuffers,
             viewport,
             vs,
             fs,
+            pipeline,
             command_buffer_allocator,
-            command_buffers,
-            push_constants
         })
     }
 
-    pub fn run(
-        mut self,
-        device_ctx: DeviceCtx,
-        vertex_buffer: Subbuffer<[MyVertex]>
-    ) {
-        let mut window_resized = false;
-        let mut cursor_over_window = false;
-        let mut recreate_swapchain = false;
+    pub fn recreate_swapchain(
+        &mut self,
+        device_ctx: &DeviceCtx,
+        new_dimensions: PhysicalSize<u32>
+    ) -> Result<()> {
+        let is_resize = self.swapchain_dimensions != new_dimensions;
 
-        let frames_in_flight = self.swapchain_images.len();
-        let mut fences: Vec<Option<Arc<FenceSignalFuture<_>>>> = vec![None; frames_in_flight];
-        let mut previous_fence_i = 0;
+        let (new_swapchain, new_images) = self.swapchain.recreate(SwapchainCreateInfo {
+            image_extent: new_dimensions.into(),
+            ..self.swapchain.create_info()
+        })?;
+        let new_framebuffers = Self::get_framebuffers(&new_images, self.render_pass.clone());
+        
+        self.swapchain = new_swapchain;
+        self.swapchain_images = new_images;
+        self.swapchain_dimensions = new_dimensions;
+        self.framebuffers = new_framebuffers;
+        if is_resize {
+            self.viewport.dimensions = new_dimensions.into();
+            self.pipeline = Self::get_pipeline(
+                device_ctx.device.clone(),
+                self.vs.clone(),
+                self.fs.clone(),
+                self.render_pass.clone(),
+                self.viewport.clone(),
+            );
+        }
 
-        let mut input = Input::new(vec2(0.0, 0.0));
+        Ok(())
+    }
 
-        device_ctx.event_loop.run(move |event, _, control_flow| match event {
-            Event::WindowEvent { ref event, window_id } if window_id == device_ctx.window.id() => match event {
-                WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                WindowEvent::Resized(physical_size) => {
-                    window_resized = true;
-                },
-                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                    window_resized = true;
-                },
-                WindowEvent::CursorEntered { .. } => {
-                    cursor_over_window = true;
-                },
-                WindowEvent::CursorLeft { .. } => {
-                    cursor_over_window = false;
-                },
-                _ => {
-                    if device_ctx.window.has_focus() && cursor_over_window {
-                        input.process_window_events(event);
-                    }
-                }
-            },
-            Event::DeviceEvent { ref event, .. } => {
-                if device_ctx.window.has_focus() && cursor_over_window {
-                    input.process_device_events(event);
-                    let window_size = device_ctx.window.inner_size();
-                    device_ctx.window.set_cursor_position(winit::dpi::PhysicalPosition::new(
-                        window_size.width / 2,
-                        window_size.height / 2
-                    )).expect("Platform does not support setting the cursor position");
-                }
-            },
-
-
-
-            Event::MainEventsCleared => {
-                if window_resized || recreate_swapchain {
-                    recreate_swapchain = false;
-
-                    let new_dimensions = device_ctx.window.inner_size();
-                    self.push_constants.proj = 
-                        (glam::Mat4::from_scale(glam::vec3(1.0, -1.0, 1.0)) * glam::Mat4::perspective_lh(1.5, new_dimensions.width as f32 / new_dimensions.height as f32, 0.1, 100.0))
-                        .to_cols_array_2d();
-
-                    let (new_swapchain, new_images) = match self.swapchain.recreate(SwapchainCreateInfo {
-                        image_extent: new_dimensions.into(),
-                        ..self.swapchain.create_info()
-                    }) {
-                        Ok(r) => r,
-                        Err(SwapchainCreationError::ImageExtentNotSupported { .. }) => return,
-                        Err(e) => panic!("failed to recreate swapchain: {e}"),
-                    };
-                    self.swapchain = new_swapchain;
-                    let new_framebuffers = Self::get_framebuffers(&new_images, self.render_pass.clone());
-
-                    if window_resized {
-                        window_resized = false;
-
-                        self.viewport.dimensions = new_dimensions.into();
-                        let new_pipeline = Self::get_pipeline(
-                            device_ctx.device.clone(),
-                            self.vs.clone(),
-                            self.fs.clone(),
-                            self.render_pass.clone(),
-                            self.viewport.clone(),
-                        );
-                        self.command_buffers = Self::get_command_buffers(
-                            &self.command_buffer_allocator,
-                            &device_ctx.queue,
-                            &new_pipeline,
-                            &new_framebuffers,
-                            &vertex_buffer,
-                            self.push_constants.clone()
-                        );
-                    }
-                }
-
-                let (image_i, suboptimal, acquire_future) =
-                    match vulkano::swapchain::acquire_next_image(self.swapchain.clone(), None) {
-                        Ok(r) => r,
-                        Err(AcquireError::OutOfDate) => {
-                            recreate_swapchain = true;
-                            return;
-                        }
-                        Err(e) => panic!("failed to acquire next image: {e}"),
-                    };
-
-                if suboptimal {
-                    recreate_swapchain = true;
-                }
-
-                // wait for the fence related to this image to finish (normally this would be the oldest fence)
-                if let Some(image_fence) = &fences[image_i as usize] {
-                    image_fence.wait(None).unwrap();
-                }
-
-                let previous_future = match fences[previous_fence_i as usize].clone() {
-                    // Create a NowFuture
-                    None => {
-                        let mut now = sync::now(device_ctx.device.clone());
-                        now.cleanup_finished();
-                        now.boxed()
-                    }
-                    // Use the existing FenceSignalFuture
-                    Some(fence) => fence.boxed(),
-                };
-
-                let future = previous_future
-                    .join(acquire_future)
-                    .then_execute(device_ctx.queue.clone(), self.command_buffers[image_i as usize].clone())
-                    .unwrap()
-                    .then_swapchain_present(
-                        device_ctx.queue.clone(),
-                        SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_i),
-                    )
-                    .then_signal_fence_and_flush();
-
-                fences[image_i as usize] = match future {
-                    Ok(value) => Some(Arc::new(value)),
-                    Err(FlushError::OutOfDate) => {
-                        recreate_swapchain = true;
-                        None
-                    }
-                    Err(e) => {
-                        println!("failed to flush future: {e}");
-                        None
-                    }
-                };
-
-                previous_fence_i = image_i;
+    // Returns true if the swapchain should be recreated
+    pub fn render(
+        &mut self,
+        device_ctx: &DeviceCtx,
+        scene: &Scene
+    ) -> Result<RenderStatus> {
+        let (next_image_index, suboptimal, acquire_future) = match vulkano::swapchain::acquire_next_image(self.swapchain.clone(), None) {
+            Ok(r) => r,
+            Err(AcquireError::OutOfDate) => return Ok(RenderStatus { rendered: false, needs_recreate: true }),
+            Err(e) => panic!("failed to acquire next image: {e}"),
+        };
+        if let Some(image_fence) = &self.swapchain_fences[next_image_index as usize] {
+            image_fence.wait(None).unwrap();
+        }
+        let previous_future = match self.swapchain_fences[self.last_image_index as usize].clone() {
+            None => {
+                let mut now = sync::now(device_ctx.device.clone());
+                now.cleanup_finished();
+                now.boxed()
             }
-            _ => (),
-        });
+            Some(fence) => fence.boxed(),
+        };
+        let command_buffer = scene.build_command_buffer(&self.command_buffer_allocator, &device_ctx.queue, &self.pipeline, &self.framebuffers[next_image_index as usize]);
+        let future = previous_future
+            .join(acquire_future)
+            .then_execute(device_ctx.queue.clone(), command_buffer)
+            .unwrap()
+            .then_swapchain_present(
+                device_ctx.queue.clone(),
+                SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), next_image_index),
+            )
+            .then_signal_fence_and_flush();
+
+        let mut return_status = RenderStatus {
+            rendered: true,
+            needs_recreate: suboptimal
+        };
+
+        self.swapchain_fences[next_image_index as usize] = match future {
+            Ok(value) => Some(Arc::new(value.boxed())),
+            Err(FlushError::OutOfDate) => {
+                return_status.needs_recreate = true;
+                None
+            }
+            Err(e) => {
+                println!("failed to flush future: {e}");
+                None
+            }
+        };
+        self.last_image_index = next_image_index;
+
+        Ok(return_status)
     }
 }
