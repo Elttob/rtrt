@@ -31,9 +31,12 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
         &self
     ) -> Result<SelectedPhysicalDevice> {
         let devices = unsafe { self.instance_ctx.instance.enumerate_physical_devices() }?;
-        devices.iter().cloned()
-        .filter_map(|device| {
-            let (graphics_family_index, present_family_index) = self.find_queue_families(device)?;
+        let devices_and_queues = devices.into_iter()
+            .map(|device| Ok((device, self.find_queue_families(device)?)))
+            .collect::<Result<Vec<_>>>()?;
+        devices_and_queues.into_iter()
+        .filter_map(|(device, queues)| {
+            let (graphics_family_index, present_family_index) = queues?;
             let supports_required_extensions = self.test_required_extensions(device).ok()?;
             if !supports_required_extensions { return None; }
             let swapchain_support_details = self.swapchain_support_details(device).ok()?;
@@ -69,7 +72,7 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
     fn find_queue_families(
         &self,
         device: vk::PhysicalDevice
-    ) -> Option<(u32, u32)> {
+    ) -> Result<Option<(u32, u32)>> {
         let mut graphics = None;
         let mut present = None;
         let props = unsafe { self.instance_ctx.instance.get_physical_device_queue_family_properties(device) };
@@ -78,17 +81,17 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
             if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) && graphics.is_none() {
                 graphics = Some(index);
             }
-            let present_support = unsafe { self.surface.get_physical_device_surface_support(device, index, self.surface_khr).unwrap_or(false) };
+            let present_support = unsafe { self.surface.get_physical_device_surface_support(device, index, self.surface_khr)? };
             if present_support && present.is_none() {
                 present = Some(index);
             }
             if let Some(graphics) = graphics {
                 if let Some(present) = present {
-                    return Some((graphics, present))
+                    return Ok(Some((graphics, present)))
                 }
             }
         }
-        None
+        Ok(None)
     }
     
     fn create_logical_device(
