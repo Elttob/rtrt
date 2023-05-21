@@ -18,5 +18,20 @@ strum = "0.24"
 strum_macros = "0.24"
 winapi = "0.3.6"
 
+[build-dependencies]
+anyhow = "1.0.71"
+spirv-builder = "0.7.0"
+
 [profile.dev]
 opt-level = 1 
+
+[profile.release.build-override]
+opt-level = 3
+codegen-units = 16
+[profile.dev.build-override]
+opt-level = 3
+
+[workspace]
+members = [
+    "shaders"
+]
