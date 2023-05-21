@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use ash::Entry;
+use ash::{Entry, vk::Extent2D};
 use winit::{window::{WindowBuilder, Window}, event_loop::EventLoop};
 
 use crate::ctx::{debug::{MessageSeverityFlags, MessageTypeFlags}, entry::EntryCtx};
@@ -36,15 +36,20 @@ fn main() -> Result<()> {
     log::debug!("Starting!");
 
     let (_event_loop, window) = create_window()?;
+    let preferred_extent = Extent2D {
+        width: window.inner_size().width,
+        height: window.inner_size().height
+    };
 
     let entry_ctx = EntryCtx { entry: Entry::linked() };
     let instance_ctx = entry_ctx.create_instance_ctx(Default::default(), &[], true)?;
-    let debug_ctx = instance_ctx.create_debug_ctx(
+    let _debug_ctx = instance_ctx.create_debug_ctx(
         MessageSeverityFlags { warning: true, error: true, ..Default::default() },
         MessageTypeFlags { validation: true, ..Default::default() }
     )?;
     let surface_ctx = instance_ctx.create_surface_ctx(window.clone())?;
     let device_ctx = surface_ctx.create_device_ctx()?;
+    let swapchain_ctx = device_ctx.create_swapchain_ctx(preferred_extent)?;
     
     // TODO: 1.2.1 here -> https://github.com/adrien-ben/vulkan-tutorial-rs/commits/master?after=6c47737e505aa7b2b5a4d7b2711490b2482c246b+34&branch=master&qualified_name=refs%2Fheads%2Fmaster
 
