@@ -36,7 +36,7 @@ fn main() -> Result<()> {
 
     let (_event_loop, window) = create_window()?;
 
-    let _device_ctx = OverallCtx::new(
+    let _overall_ctx = OverallCtx::new(
         window.clone(),
         Default::default(),
         &[],
