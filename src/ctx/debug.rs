@@ -3,6 +3,16 @@ use std::ffi::{c_void, CStr};
 use anyhow::{Result, bail};
 use ash::{extensions::ext::DebugUtils, vk::{DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, Bool32, DebugUtilsMessengerCallbackDataEXT, self, DebugUtilsMessengerEXT}, Entry, Instance};
 
+pub const VALIDATION_LAYERS: &[&str] = &["VK_LAYER_KHRONOS_validation"];
+
+pub fn required_extension_names(with_validation: bool) -> Vec<*const i8> {
+    if with_validation {
+        vec![DebugUtils::name().as_ptr()]
+    } else {
+        vec![]
+    }
+}
+
 #[derive(Debug, strum_macros::Display)]
 pub enum MessageSeverity {
     Info,
@@ -166,12 +176,12 @@ impl From<MessageTypeFlags> for DebugUtilsMessageTypeFlagsEXT {
         severity
     }
 }
-pub struct DebugUtilsMessenger {
+pub struct DebugCtx {
     debug_utils: DebugUtils,
     messenger: DebugUtilsMessengerEXT
 }
 
-impl DebugUtilsMessenger {
+impl DebugCtx {
     unsafe extern "system" fn vk_message_callback(
         message_severity: DebugUtilsMessageSeverityFlagsEXT,
         _message_types: DebugUtilsMessageTypeFlagsEXT,

@@ -1,9 +1,9 @@
 use anyhow::Result;
 use winit::{window::{WindowBuilder, Window}, event_loop::EventLoop};
 
-use crate::device_ctx::{DeviceCtx, MessageSeverityFlags, MessageTypeFlags};
+use crate::ctx::{overall::OverallCtx, debug::{MessageSeverityFlags, MessageTypeFlags}};
 
-mod device_ctx;
+mod ctx;
 
 fn create_window() -> Result<(EventLoop<()>, Window)> {
     let event_loop = EventLoop::new();
@@ -32,16 +32,12 @@ fn main() -> Result<()> {
     env_logger::init();
     log::debug!("Starting!");
 
-    let (_event_loop, _window) = create_window()?;
+    let (_event_loop, window) = create_window()?;
 
-    let entry = ash::Entry::linked();
-    let _device_ctx = DeviceCtx::new(
-        &entry,
+    let _device_ctx = OverallCtx::new(
+        &window,
         Default::default(),
-        &[
-            ash::extensions::khr::Surface::name(),
-            ash::extensions::khr::Win32Surface::name()
-        ],
+        &[],
         Some((MessageSeverityFlags {
             warning: true,
             error: true,
@@ -52,5 +48,7 @@ fn main() -> Result<()> {
         }))
     )?;
     
+    // TODO: 1.2.1 here -> https://github.com/adrien-ben/vulkan-tutorial-rs/commits/master?after=6c47737e505aa7b2b5a4d7b2711490b2482c246b+34&branch=master&qualified_name=refs%2Fheads%2Fmaster
+
     Ok(())
 }
