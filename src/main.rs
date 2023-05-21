@@ -51,7 +51,7 @@ fn main() -> Result<()> {
     let surface_ctx = instance_ctx.create_surface_ctx(window.clone())?;
     let device_ctx = surface_ctx.create_device_ctx()?;
     let swapchain_ctx = device_ctx.create_swapchain_ctx(preferred_extent)?;
-    let shader_ctx = device_ctx.create_shader_ctx(&read_spv(&mut File::open(env!("shaders.spv"))?)?);
+    let shader_ctx = device_ctx.create_shader_ctx(&read_spv(&mut File::open(env!("shaders.spv"))?)?, "shaders.spv".to_string());
     
     // TODO: 1.2.1 here -> https://github.com/adrien-ben/vulkan-tutorial-rs/commits/master?after=6c47737e505aa7b2b5a4d7b2711490b2482c246b+34&branch=master&qualified_name=refs%2Fheads%2Fmaster
 
