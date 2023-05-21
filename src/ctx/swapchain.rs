@@ -1,4 +1,4 @@
-use ash::{extensions::khr::Swapchain, vk::{SwapchainKHR, Format, Extent2D, Image, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR, ColorSpaceKHR}};
+use ash::{extensions::khr::Swapchain, vk::{SwapchainKHR, Format, Extent2D, Image, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR, ColorSpaceKHR, SwapchainCreateInfoKHR, ImageUsageFlags, SharingMode, CompositeAlphaFlagsKHR}};
 use anyhow::Result;
 use super::device::DeviceCtx;
 
@@ -60,47 +60,52 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
         &self,
         preferred_extent: Extent2D
     ) -> Result<SwapchainCtx> {
-        let details = self.swapchain_support_details()?;
-        let format = select_surface_format(&details.formats);
-        let present_mode = select_surface_present_mode(&details.present_modes);
-        let extent = select_extent(details.capabilities, preferred_extent);
+        let support_details = &self.physical_device.swapchain_support_details;
+        let format = select_surface_format(&support_details.formats);
+        let present_mode = select_surface_present_mode(&support_details.present_modes);
+        let extent = select_extent(support_details.capabilities, preferred_extent);
+        let image_count = {
+            let max = support_details.capabilities.max_image_count;
+            let preferred = support_details.capabilities.min_image_count + 1;
+            if max == 0 || preferred <= max { preferred } else { max }
+        };
+        let image_sharing_mode = if self.physical_device.dedup_family_indices.len() > 1 { SharingMode::CONCURRENT } else { SharingMode::EXCLUSIVE };
+        let create_info = SwapchainCreateInfoKHR::builder()
+            .surface(self.surface_ctx.surface_khr)
+            .min_image_count(image_count)
+            .image_format(format.format)
+            .image_color_space(format.color_space)
+            .image_extent(extent)
+            .image_array_layers(1)
+            .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
+            .image_sharing_mode(image_sharing_mode)
+            .queue_family_indices(&self.physical_device.dedup_family_indices)
+            .pre_transform(support_details.capabilities.current_transform)
+            .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
+            .present_mode(present_mode)
+            .clipped(true)
+            .build();
+        let swapchain = Swapchain::new(&self.surface_ctx.instance_ctx.instance, &self.logical_device.device);
+        let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None)? };
+        let images = unsafe { swapchain.get_swapchain_images(swapchain_khr)? };
 
-        log::debug!("SwapchainCtx created");
+        log::debug!("SwapchainCtx created (format: {:?}, clr space: {:?}, pres mode: {:?}, extent: {:?}, count: {})", format.format, format.color_space, present_mode, extent, image_count);
         Ok(SwapchainCtx {
             device_ctx: self,
             swapchain,
             swapchain_khr,
             images,
-            swapchain_image_format,
-            swapchain_extent
-        })
-    }
-
-    fn swapchain_support_details(
-        &self
-    ) -> Result<SwapchainSupportDetails> {
-        let (surface, surface_khr, physical_device) = (self.surface_ctx.surface, self.surface_ctx.surface_khr, self.physical_device);
-        let capabilities = unsafe { surface.get_physical_device_surface_capabilities(physical_device, surface_khr)? };
-        let formats = unsafe { surface.get_physical_device_surface_formats(physical_device, surface_khr)? };
-        let present_modes = unsafe { surface.get_physical_device_surface_present_modes(physical_device, surface_khr)? };
-        Ok(SwapchainSupportDetails {
-            capabilities,
-            formats,
-            present_modes,
+            swapchain_image_format: format.format,
+            swapchain_extent: extent
         })
     }
 }
 
 impl Drop for SwapchainCtx<'_, '_, '_, '_> {
     fn drop(&mut self) {
+        unsafe {
+            self.swapchain.destroy_swapchain(self.swapchain_khr, None);
+        }
         log::debug!("SwapchainCtx dropped");
     }
-}
-
-// SUPPORTING TYPES
-
-struct SwapchainSupportDetails {
-    capabilities: SurfaceCapabilitiesKHR,
-    formats: Vec<SurfaceFormatKHR>,
-    present_modes: Vec<PresentModeKHR>,
 }

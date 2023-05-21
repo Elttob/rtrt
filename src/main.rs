@@ -32,6 +32,7 @@ fn create_window() -> Result<(EventLoop<()>, Arc<Window>)> {
 
 fn main() -> Result<()> {
     std::env::set_var("RUST_LOG", "DEBUG");
+    std::env::set_var("RUST_BACKTRACE", "1");
     env_logger::init();
     log::debug!("Starting!");
 

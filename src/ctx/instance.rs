@@ -56,9 +56,7 @@ impl EntryCtx {
             layer_names,
             layer_name_pointers
         })
-    }
-
-    
+    }    
 }
 
 impl Drop for InstanceCtx<'_> {
