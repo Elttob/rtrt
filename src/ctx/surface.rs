@@ -28,30 +28,30 @@ pub unsafe fn create_surface_win32(
     win32_surface_loader.create_win32_surface(&win32_create_info, None)
 }
 
-pub struct SurfaceCtx {
-    pub instance_ctx: Arc<InstanceCtx>,
+pub struct SurfaceCtx<'ins, 'en> {
+    pub instance_ctx: &'ins InstanceCtx<'en>,
     pub surface: Surface,
     pub surface_khr: vk::SurfaceKHR
 }
 
-impl SurfaceCtx {
-    pub fn new(
-        instance_ctx: Arc<InstanceCtx>,
+impl<'en> InstanceCtx<'en> {
+    pub fn create_surface_ctx(
+        &self,
         window: Arc<Window>
-    ) -> Result<Self> {
-        let surface = Surface::new(&instance_ctx.entry, &instance_ctx.instance);
-        let surface_khr = unsafe { create_surface_win32(&instance_ctx.entry, &instance_ctx.instance, &window)? };
+    ) -> Result<SurfaceCtx> {
+        let surface = Surface::new(&self.entry_ctx.entry, &self.instance);
+        let surface_khr = unsafe { create_surface_win32(&self.entry_ctx.entry, &self.instance, &window)? };
 
         log::debug!("SurfaceCtx created");
-        Ok(Self {
-            instance_ctx,
+        Ok(SurfaceCtx {
+            instance_ctx: self,
             surface,
             surface_khr
         })
     }
 }
 
-impl Drop for SurfaceCtx {
+impl Drop for SurfaceCtx<'_, '_> {
     fn drop(&mut self) {
         unsafe {
             self.surface.destroy_surface(self.surface_khr, None);

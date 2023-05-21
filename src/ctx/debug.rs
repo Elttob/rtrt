@@ -1,4 +1,4 @@
-use std::{ffi::{c_void, CStr}, sync::Arc};
+use std::{ffi::{c_void, CStr}};
 
 use anyhow::{Result, bail};
 use ash::{extensions::ext::DebugUtils, vk::{DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, Bool32, DebugUtilsMessengerCallbackDataEXT, self, DebugUtilsMessengerEXT},};
@@ -14,63 +14,63 @@ pub fn required_extension_names(with_validation: bool) -> Vec<*const i8> {
         vec![]
     }
 }
-pub struct DebugCtx {
-    pub instance_ctx: Arc<InstanceCtx>,
+
+unsafe extern "system" fn vk_message_callback(
+    message_severity: DebugUtilsMessageSeverityFlagsEXT,
+    _message_types: DebugUtilsMessageTypeFlagsEXT,
+    callback_data: *const DebugUtilsMessengerCallbackDataEXT,
+    _user_data: *mut c_void,
+) -> Bool32 {
+    let message_severity = MessageSeverity::try_from(message_severity);
+    let severity_str = if let Ok(message_severity) = &message_severity {
+        message_severity.to_string()
+    } else {
+        "(vkw: unknown)".to_string()
+    };
+    let message = if let Some(callback_data) = callback_data.as_ref() {
+        CStr::from_ptr(callback_data.p_message).to_str().unwrap_or("(vkw: could not read p_message)")
+    } else {
+        "(vkw: could not read callback_data)"
+    };
+
+    match message_severity.unwrap_or(MessageSeverity::Warning) {
+        MessageSeverity::Error => log::error!("[VK/{}] {}", severity_str, message),
+        MessageSeverity::Warning => log::warn!("[VK/{}] {}", severity_str, message),
+        MessageSeverity::Info => log::info!("[VK/{}] {}", severity_str, message),
+        MessageSeverity::Verbose => log::debug!("[VK/{}] {}", severity_str, message),
+    }
+    
+    vk::FALSE
+}
+pub struct DebugCtx<'ins, 'en> {
+    pub instance_ctx: &'ins InstanceCtx<'en>,
     pub debug_utils: DebugUtils,
     pub messenger: DebugUtilsMessengerEXT
 }
 
-impl DebugCtx {
-    unsafe extern "system" fn vk_message_callback(
-        message_severity: DebugUtilsMessageSeverityFlagsEXT,
-        _message_types: DebugUtilsMessageTypeFlagsEXT,
-        callback_data: *const DebugUtilsMessengerCallbackDataEXT,
-        _user_data: *mut c_void,
-    ) -> Bool32 {
-        let message_severity = MessageSeverity::try_from(message_severity);
-        let severity_str = if let Ok(message_severity) = &message_severity {
-            message_severity.to_string()
-        } else {
-            "(vkw: unknown)".to_string()
-        };
-        let message = if let Some(callback_data) = callback_data.as_ref() {
-            CStr::from_ptr(callback_data.p_message).to_str().unwrap_or("(vkw: could not read p_message)")
-        } else {
-            "(vkw: could not read callback_data)"
-        };
-
-        match message_severity.unwrap_or(MessageSeverity::Warning) {
-            MessageSeverity::Error => log::error!("[VK/{}] {}", severity_str, message),
-            MessageSeverity::Warning => log::warn!("[VK/{}] {}", severity_str, message),
-            MessageSeverity::Info => log::info!("[VK/{}] {}", severity_str, message),
-            MessageSeverity::Verbose => log::debug!("[VK/{}] {}", severity_str, message),
-        }
-        
-        vk::FALSE
-    }
-
-    pub fn new(
-        instance_ctx: Arc<InstanceCtx>,
+impl<'en> InstanceCtx<'en> {
+    pub fn create_debug_ctx(
+        &self,
         message_severity: MessageSeverityFlags,
         message_type: MessageTypeFlags
-    ) -> Result<Self> {
-        let debug_utils = DebugUtils::new(&instance_ctx.entry, &instance_ctx.instance);
+    ) -> Result<DebugCtx> {
+        let debug_utils = DebugUtils::new(&self.entry_ctx.entry, &self.instance);
         let create_info = DebugUtilsMessengerCreateInfoEXT::builder()
             .message_severity(message_severity.into())
             .message_type(message_type.into())
-            .pfn_user_callback(Some(Self::vk_message_callback));
+            .pfn_user_callback(Some(vk_message_callback));
         let messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }?;
         
         log::debug!("DebugCtx created");
-        Ok(Self {
-            instance_ctx,
+        Ok(DebugCtx {
+            instance_ctx: self,
             debug_utils,
             messenger
         })
     }
 }
 
-impl Drop for DebugCtx {
+impl Drop for DebugCtx<'_, '_> {
     fn drop(&mut self) {
         unsafe {
             self.debug_utils.destroy_debug_utils_messenger(self.messenger, None);

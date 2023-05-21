@@ -1,65 +1,67 @@
-use std::{ffi::{CStr, CString, c_char}, sync::Arc};
+use std::{ffi::{CStr, CString, c_char}};
 use anyhow::Result;
-use ash::{Instance, Entry, vk};
+use ash::{Instance, vk};
 
 use crate::ctx::{surface, debug};
 
-use super::{debug::{MessageSeverityFlags, MessageTypeFlags}};
+use super::entry::EntryCtx;
 
-pub struct InstanceCtx {
-    pub entry: Arc<Entry>,
+fn get_layer_names_and_pointers(
+    with_validation: bool
+) -> Result<(Vec<CString>, Vec<*const c_char>)> {
+    if with_validation {
+        let names = debug::VALIDATION_LAYERS.iter().cloned()
+            .map(CString::new)
+            .collect::<Result<Vec<_>, _>>()?;
+        let pointers = names.iter()
+            .map(|name| name.as_ptr())
+            .collect::<Vec<_>>();
+        Ok((names, pointers))
+    } else {
+        Ok((vec![], vec![]))
+    }
+}
+
+pub struct InstanceCtx<'en> {
+    pub entry_ctx: &'en EntryCtx,
     pub instance: Instance,
     pub layer_names: Vec<CString>,
     pub layer_name_pointers: Vec<*const i8>
 }
 
-impl InstanceCtx {
-    pub fn new(
-        entry: Arc<Entry>,
+impl EntryCtx {
+    pub fn create_instance_ctx(
+        &self,
         app_info: AppInfo,
         user_extensions: &[&CStr],
-        validation: Option<(MessageSeverityFlags, MessageTypeFlags)>
-    ) -> Result<Self> {
-        let (layer_names, layer_name_pointers) = Self::get_layer_names_and_pointers(validation.is_some())?;
+        with_validation: bool
+    ) -> Result<InstanceCtx> {
+        let (layer_names, layer_name_pointers) = get_layer_names_and_pointers(with_validation)?;
         let app_info = app_info.try_into()?;
         let all_extensions = user_extensions.into_iter()
             .map(|x| x.as_ptr())
             .chain(surface::required_extension_names_win32().into_iter())
-            .chain(debug::required_extension_names(validation.is_some()).into_iter())
+            .chain(debug::required_extension_names(with_validation).into_iter())
             .collect::<Vec<_>>();
         let instance_create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .enabled_extension_names(&all_extensions)
             .enabled_layer_names(&layer_name_pointers);
-        let instance = unsafe { entry.create_instance(&instance_create_info, None) }?;
+        let instance = unsafe { self.entry.create_instance(&instance_create_info, None) }?;
 
         log::debug!("InstanceCtx created");
-        Ok(Self {
-            entry,
+        Ok(InstanceCtx {
+            entry_ctx: self,
             instance,
             layer_names,
             layer_name_pointers
         })
     }
 
-    fn get_layer_names_and_pointers(
-        with_validation: bool
-    ) -> Result<(Vec<CString>, Vec<*const c_char>)> {
-        if with_validation {
-            let names = debug::VALIDATION_LAYERS.iter().cloned()
-                .map(CString::new)
-                .collect::<Result<Vec<_>, _>>()?;
-            let pointers = names.iter()
-                .map(|name| name.as_ptr())
-                .collect::<Vec<_>>();
-            Ok((names, pointers))
-        } else {
-            Ok((vec![], vec![]))
-        }
-    }
+    
 }
 
-impl Drop for InstanceCtx {
+impl Drop for InstanceCtx<'_> {
     fn drop(&mut self) {
         unsafe {
             self.instance.destroy_instance(None);

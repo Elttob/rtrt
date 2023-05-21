@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use ash::Entry;
 use winit::{window::{WindowBuilder, Window}, event_loop::EventLoop};
 
-use crate::ctx::{overall::OverallCtx, debug::{MessageSeverityFlags, MessageTypeFlags}};
+use crate::ctx::{debug::{MessageSeverityFlags, MessageTypeFlags}, entry::EntryCtx};
 
 mod ctx;
 
@@ -36,19 +37,14 @@ fn main() -> Result<()> {
 
     let (_event_loop, window) = create_window()?;
 
-    let _overall_ctx = OverallCtx::new(
-        window.clone(),
-        Default::default(),
-        &[],
-        Some((MessageSeverityFlags {
-            warning: true,
-            error: true,
-            ..Default::default()
-        }, MessageTypeFlags {
-            validation: true,
-            ..Default::default()
-        }))
+    let entry_ctx = EntryCtx { entry: Entry::linked() };
+    let instance_ctx = entry_ctx.create_instance_ctx(Default::default(), &[], true)?;
+    let debug_ctx = instance_ctx.create_debug_ctx(
+        MessageSeverityFlags { warning: true, error: true, ..Default::default() },
+        MessageTypeFlags { validation: true, ..Default::default() }
     )?;
+    let surface_ctx = instance_ctx.create_surface_ctx(window.clone())?;
+    let device_ctx = surface_ctx.create_device_ctx()?;
     
     // TODO: 1.2.1 here -> https://github.com/adrien-ben/vulkan-tutorial-rs/commits/master?after=6c47737e505aa7b2b5a4d7b2711490b2482c246b+34&branch=master&qualified_name=refs%2Fheads%2Fmaster
 
