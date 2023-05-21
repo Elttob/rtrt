@@ -60,7 +60,7 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
         &self,
         preferred_extent: Extent2D
     ) -> Result<SwapchainCtx> {
-        let support_details = &self.physical_device.swapchain_support_details;
+        let support_details = &self.physical_info.swapchain_support_details;
         let format = select_surface_format(&support_details.formats);
         let present_mode = select_surface_present_mode(&support_details.present_modes);
         let extent = select_extent(support_details.capabilities, preferred_extent);
@@ -69,7 +69,7 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
             let preferred = support_details.capabilities.min_image_count + 1;
             if max == 0 || preferred <= max { preferred } else { max }
         };
-        let image_sharing_mode = if self.physical_device.dedup_family_indices.len() > 1 { SharingMode::CONCURRENT } else { SharingMode::EXCLUSIVE };
+        let image_sharing_mode = if self.physical_info.dedup_family_indices.len() > 1 { SharingMode::CONCURRENT } else { SharingMode::EXCLUSIVE };
         let create_info = SwapchainCreateInfoKHR::builder()
             .surface(self.surface_ctx.surface_khr)
             .min_image_count(image_count)
@@ -79,13 +79,13 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
             .image_array_layers(1)
             .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
             .image_sharing_mode(image_sharing_mode)
-            .queue_family_indices(&self.physical_device.dedup_family_indices)
+            .queue_family_indices(&self.physical_info.dedup_family_indices)
             .pre_transform(support_details.capabilities.current_transform)
             .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(present_mode)
             .clipped(true)
             .build();
-        let swapchain = Swapchain::new(&self.surface_ctx.instance_ctx.instance, &self.logical_device.device);
+        let swapchain = Swapchain::new(&self.surface_ctx.instance_ctx.instance, &self.logical_info.device);
         let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None)? };
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr)? };
 

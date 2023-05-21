@@ -7,8 +7,8 @@ use super::surface::{SurfaceCtx, SwapchainSupportDetails};
 pub const REQUIRED_DEVICE_EXT: &[&CStr] = &[Swapchain::name()];
 pub struct DeviceCtx<'srf, 'ins, 'en> {
     pub surface_ctx: &'srf SurfaceCtx<'ins, 'en>,
-    pub physical_device: SelectedPhysicalDevice,
-    pub logical_device: SelectedLogicalDevice
+    pub physical_info: PhysicalDeviceInfo,
+    pub logical_info: LogicalDeviceInfo
 }
 
 impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
@@ -16,20 +16,20 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
         &self
     ) -> Result<DeviceCtx> {
         let instance_ctx = &self.instance_ctx;
-        let physical_device = self.select_physical_device()?;
-        let logical_device = self.create_logical_device(&physical_device, &instance_ctx.layer_name_pointers)?;
+        let physical_info = self.select_physical_device()?;
+        let logical_info = self.create_logical_device(&physical_info, &instance_ctx.layer_name_pointers)?;
         
-        log::debug!("DeviceCtx created ({})", physical_device.debug_device_name.to_str().unwrap_or("vkw: device is not nameable"));
+        log::debug!("DeviceCtx created ({})", physical_info.debug_device_name.to_str().unwrap_or("vkw: device is not nameable"));
         Ok(DeviceCtx {
             surface_ctx: self,
-            physical_device,
-            logical_device
+            physical_info,
+            logical_info
         })
     }
 
     fn select_physical_device(
         &self
-    ) -> Result<SelectedPhysicalDevice> {
+    ) -> Result<PhysicalDeviceInfo> {
         let devices = unsafe { self.instance_ctx.instance.enumerate_physical_devices() }?;
         let devices_and_queues = devices.into_iter()
             .map(|device| Ok((device, self.find_queue_families(device)?)))
@@ -45,7 +45,7 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
             let props = unsafe { self.instance_ctx.instance.get_physical_device_properties(device) };
             let debug_device_name = unsafe { CStr::from_ptr(props.device_name.as_ptr()) }.to_owned();
             let dedup_family_indices = if graphics_family_index == present_family_index { vec![graphics_family_index] } else { vec![graphics_family_index, present_family_index] };
-            Some(SelectedPhysicalDevice {
+            Some(PhysicalDeviceInfo {
                 device,
                 graphics_family_index,
                 present_family_index,
@@ -71,7 +71,7 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
     
     fn find_queue_families(
         &self,
-        device: vk::PhysicalDevice
+        device: PhysicalDevice
     ) -> Result<Option<(u32, u32)>> {
         let mut graphics = None;
         let mut present = None;
@@ -96,11 +96,11 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
     
     fn create_logical_device(
         &self,
-        physical_device: &SelectedPhysicalDevice,
+        physical_info: &PhysicalDeviceInfo,
         layer_name_pointers: &[*const c_char]
-    ) -> Result<SelectedLogicalDevice> {
+    ) -> Result<LogicalDeviceInfo> {
         let queue_priorities = [1.0f32];
-        let queue_create_infos = physical_device.dedup_family_indices.iter()
+        let queue_create_infos = physical_info.dedup_family_indices.iter()
             .map(|index| vk::DeviceQueueCreateInfo::builder()
                 .queue_family_index(*index)
                 .queue_priorities(&queue_priorities)
@@ -114,10 +114,10 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
             .enabled_features(&device_features)
             .enabled_layer_names(layer_name_pointers)
             .build();
-        let device = unsafe { self.instance_ctx.instance.create_device(physical_device.device, &device_create_info, None)? };
-        let graphics_queue = unsafe { device.get_device_queue(physical_device.graphics_family_index, 0) };
-        let present_queue = unsafe { device.get_device_queue(physical_device.present_family_index, 0) };
-        Ok(SelectedLogicalDevice {
+        let device = unsafe { self.instance_ctx.instance.create_device(physical_info.device, &device_create_info, None)? };
+        let graphics_queue = unsafe { device.get_device_queue(physical_info.graphics_family_index, 0) };
+        let present_queue = unsafe { device.get_device_queue(physical_info.present_family_index, 0) };
+        Ok(LogicalDeviceInfo {
             device,
             graphics_queue,
             present_queue
@@ -128,13 +128,13 @@ impl<'ins, 'en> SurfaceCtx<'ins, 'en> {
 impl Drop for DeviceCtx<'_, '_, '_> {
     fn drop(&mut self) {
         unsafe {
-            self.logical_device.device.destroy_device(None);
+            self.logical_info.device.destroy_device(None);
         }
         log::debug!("DeviceCtx dropped");
     }
 }
 
-pub struct SelectedPhysicalDevice {
+pub struct PhysicalDeviceInfo {
     pub device: PhysicalDevice,
     pub graphics_family_index: u32,
     pub present_family_index: u32,
@@ -143,7 +143,7 @@ pub struct SelectedPhysicalDevice {
     pub debug_device_name: CString
 }
 
-pub struct SelectedLogicalDevice {
+pub struct LogicalDeviceInfo {
     pub device: Device,
     pub graphics_queue: Queue,
     pub present_queue: Queue
