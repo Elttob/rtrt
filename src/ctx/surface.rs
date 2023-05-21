@@ -39,9 +39,10 @@ impl SurfaceCtx {
         instance_ctx: Arc<InstanceCtx>,
         window: Arc<Window>
     ) -> Result<Self> {
-        log::debug!("SurfaceCtx creating");
         let surface = Surface::new(&instance_ctx.entry, &instance_ctx.instance);
         let surface_khr = unsafe { create_surface_win32(&instance_ctx.entry, &instance_ctx.instance, &window)? };
+
+        log::debug!("SurfaceCtx created");
         Ok(Self {
             instance_ctx,
             surface,

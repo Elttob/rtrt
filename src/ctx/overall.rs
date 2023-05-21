@@ -25,7 +25,6 @@ impl OverallCtx {
         user_extensions: &[&CStr],
         validation: Option<(MessageSeverityFlags, MessageTypeFlags)>
     ) -> Result<Self> {
-        log::debug!("OverallCtx creating");
         let entry = Arc::new(ash::Entry::linked());
         let instance_ctx = Arc::new(InstanceCtx::new(entry.clone(), app_info, user_extensions, validation)?);
         let debug_ctx = if let Some((message_severity, message_type)) = validation {
@@ -38,6 +37,7 @@ impl OverallCtx {
         let physical_device = Self::select_physical_device(&instance_ctx, &surface_ctx)?;
         let (device, graphics_queue, present_queue) = Self::create_logical_device(&instance_ctx, &surface_ctx, physical_device, &instance_ctx.layer_name_pointers)?;
         
+        log::debug!("OverallCtx created");
         Ok(Self {
             entry,
             instance_ctx,

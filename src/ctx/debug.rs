@@ -54,7 +54,6 @@ impl DebugCtx {
         message_severity: MessageSeverityFlags,
         message_type: MessageTypeFlags
     ) -> Result<Self> {
-        log::debug!("DebugUtilsMessenger creating");
         let debug_utils = DebugUtils::new(&instance_ctx.entry, &instance_ctx.instance);
         let create_info = DebugUtilsMessengerCreateInfoEXT::builder()
             .message_severity(message_severity.into())
@@ -62,6 +61,7 @@ impl DebugCtx {
             .pfn_user_callback(Some(Self::vk_message_callback));
         let messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }?;
         
+        log::debug!("DebugCtx created");
         Ok(Self {
             instance_ctx,
             debug_utils,
@@ -72,10 +72,10 @@ impl DebugCtx {
 
 impl Drop for DebugCtx {
     fn drop(&mut self) {
-        log::debug!("DebugCtx dropping");
         unsafe {
             self.debug_utils.destroy_debug_utils_messenger(self.messenger, None);
         }
+        log::debug!("DebugCtx dropped");
     }
 }
 

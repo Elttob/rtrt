@@ -20,7 +20,6 @@ impl InstanceCtx {
         user_extensions: &[&CStr],
         validation: Option<(MessageSeverityFlags, MessageTypeFlags)>
     ) -> Result<Self> {
-        log::debug!("InstanceCtx creating");
         let (layer_names, layer_name_pointers) = Self::get_layer_names_and_pointers(validation.is_some())?;
         let app_info = app_info.try_into()?;
         let all_extensions = user_extensions.into_iter()
@@ -34,6 +33,7 @@ impl InstanceCtx {
             .enabled_layer_names(&layer_name_pointers);
         let instance = unsafe { entry.create_instance(&instance_create_info, None) }?;
 
+        log::debug!("InstanceCtx created");
         Ok(Self {
             entry,
             instance,
@@ -61,10 +61,10 @@ impl InstanceCtx {
 
 impl Drop for InstanceCtx {
     fn drop(&mut self) {
-        log::debug!("InstanceCtx dropping");
         unsafe {
             self.instance.destroy_instance(None);
         }
+        log::debug!("InstanceCtx dropped");
     }
 }
 
