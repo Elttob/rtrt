@@ -1,6 +1,6 @@
 use std::{ffi::{CStr, CString, c_char}};
 use anyhow::Result;
-use ash::{Instance, vk};
+use ash::{Instance, vk::{self, API_VERSION_1_2}};
 
 use crate::ctx::{surface, debug};
 
@@ -101,7 +101,7 @@ pub struct AppInfo<'a> {
     application_version: Version,
     engine_name: &'a str,
     engine_version: Version,
-    api_version: Version
+    api_version: u32
 }
 
 impl<'a> Default for AppInfo<'a> {
@@ -111,7 +111,7 @@ impl<'a> Default for AppInfo<'a> {
             application_version: Default::default(),
             engine_name: "No Engine",
             engine_version: Default::default(),
-            api_version: Default::default()
+            api_version: API_VERSION_1_2
         }
     }
 }
@@ -126,7 +126,7 @@ impl<'a> TryFrom<AppInfo<'a>> for vk::ApplicationInfo {
             .application_version(value.application_version.into())
             .engine_name(CString::new(value.engine_name)?.as_c_str())
             .engine_version(value.engine_version.into())
-            .api_version(value.api_version.into())
+            .api_version(value.api_version)
             .build()
         )
     }
