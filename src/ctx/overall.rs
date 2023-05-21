@@ -1,17 +1,18 @@
-use std::ffi::{CStr, c_char};
+use std::{ffi::{CStr, c_char}, sync::Arc};
 
 use anyhow::Result;
-use ash::{Instance, Device, vk};
+use ash::{Device, vk, Entry};
 
 use winit::window::Window;
 
 use crate::ctx::{debug, instance::InstanceCtx};
 
-use super::{surface::SurfaceCtx, debug::{DebugCtx, MessageSeverityFlags, MessageTypeFlags}, app_info::AppInfo};
+use super::{surface::SurfaceCtx, debug::{DebugCtx, MessageSeverityFlags, MessageTypeFlags}, instance::AppInfo};
 pub struct OverallCtx {
-    pub instance_ctx: InstanceCtx,
-    pub surface_ctx: SurfaceCtx,
-    pub debug_ctx: Option<DebugCtx>,
+    pub entry: Arc<Entry>,
+    pub instance_ctx: Arc<InstanceCtx>,
+    pub surface_ctx: Arc<SurfaceCtx>,
+    pub debug_ctx: Option<Arc<DebugCtx>>,
     pub device: ash::Device,
     pub graphics_queue: vk::Queue,
     pub present_queue: vk::Queue
@@ -19,28 +20,29 @@ pub struct OverallCtx {
 
 impl OverallCtx {
     pub fn new(
-        window: &Window,
+        window: Arc<Window>,
         app_info: AppInfo,
         user_extensions: &[&CStr],
         validation: Option<(MessageSeverityFlags, MessageTypeFlags)>
     ) -> Result<Self> {
-        log::debug!("DeviceCtx creating");
-        let entry = ash::Entry::linked();
-        let instance_ctx = InstanceCtx::new(&entry, app_info, user_extensions, validation)?;
-        let debug_utils_messenger = if let Some((message_severity, message_type)) = validation {
-            Some(debug::DebugCtx::new(&entry, &instance, message_severity, message_type)?)
+        log::debug!("OverallCtx creating");
+        let entry = Arc::new(ash::Entry::linked());
+        let instance_ctx = Arc::new(InstanceCtx::new(entry.clone(), app_info, user_extensions, validation)?);
+        let debug_ctx = if let Some((message_severity, message_type)) = validation {
+            Some(Arc::new(debug::DebugCtx::new(instance_ctx.clone(), message_severity, message_type)?))
         } else {
             None
         };
 
-        let surface_ctx = SurfaceCtx::new(&entry, &instance, window)?;
-        let physical_device = Self::select_physical_device(&instance, &surface_ctx)?;
-        let (device, graphics_queue, present_queue) = Self::create_logical_device(&instance, &surface_ctx, physical_device, &layer_name_pointers)?;
+        let surface_ctx = Arc::new(SurfaceCtx::new(instance_ctx.clone(), window.clone())?);
+        let physical_device = Self::select_physical_device(&instance_ctx, &surface_ctx)?;
+        let (device, graphics_queue, present_queue) = Self::create_logical_device(&instance_ctx, &surface_ctx, physical_device, &instance_ctx.layer_name_pointers)?;
         
         Ok(Self {
-            instance,
+            entry,
+            instance_ctx,
             surface_ctx,
-            debug_ctx: debug_utils_messenger,
+            debug_ctx,
             device,
             graphics_queue,
             present_queue
@@ -48,14 +50,14 @@ impl OverallCtx {
     }
 
     fn select_physical_device(
-        instance: &Instance,
+        instance_ctx: &InstanceCtx,
         surface_ctx: &SurfaceCtx
     ) -> Result<vk::PhysicalDevice> {
-        let devices = unsafe { instance.enumerate_physical_devices() }?;
+        let devices = unsafe { instance_ctx.instance.enumerate_physical_devices() }?;
         let device = devices.into_iter()
-            .find(|device| Self::is_device_suitable(instance, surface_ctx, *device))
+            .find(|device| Self::is_device_suitable(instance_ctx, surface_ctx, *device))
             .ok_or(anyhow::anyhow!("No suitable physical device"))?;
-        let props = unsafe { ash::Instance::get_physical_device_properties(instance.into(), device) };
+        let props = unsafe { ash::Instance::get_physical_device_properties(&instance_ctx.instance, device) };
         log::debug!("Selected physical device: {:?}", unsafe {
             CStr::from_ptr(props.device_name.as_ptr())
         });
@@ -63,21 +65,21 @@ impl OverallCtx {
     }
     
     fn is_device_suitable(
-        instance: &Instance,
+        instance_ctx: &InstanceCtx,
         surface_ctx: &SurfaceCtx,
         device: vk::PhysicalDevice,
     ) -> bool {
-        Self::find_queue_families(instance, surface_ctx, device).is_some()
+        Self::find_queue_families(instance_ctx, surface_ctx, device).is_some()
     }
     
     fn find_queue_families(
-        instance: &Instance, 
+        instance_ctx: &InstanceCtx,
         surface_ctx: &SurfaceCtx,
         device: vk::PhysicalDevice
     ) -> Option<(u32, u32)> {
         let mut graphics = None;
         let mut present = None;
-        let props = unsafe { instance.get_physical_device_queue_family_properties(device) };
+        let props = unsafe { instance_ctx.instance.get_physical_device_queue_family_properties(device) };
         for (index, family) in props.iter().filter(|f| f.queue_count > 0).enumerate() {
             let index = index as u32;
             if family.queue_flags.contains(vk::QueueFlags::GRAPHICS) && graphics.is_none() {
@@ -97,12 +99,12 @@ impl OverallCtx {
     }
     
     fn create_logical_device(
-        instance: &Instance,
+        instance_ctx: &InstanceCtx,
         surface_ctx: &SurfaceCtx,
         physical_device: vk::PhysicalDevice,
         layer_name_pointers: &[*const c_char]
     ) -> Result<(Device, vk::Queue, vk::Queue)> {
-        let (graphics_family_index, present_family_index) = Self::find_queue_families(instance, surface_ctx, physical_device).ok_or(anyhow::anyhow!("No queue families found"))?;
+        let (graphics_family_index, present_family_index) = Self::find_queue_families(instance_ctx, surface_ctx, physical_device).ok_or(anyhow::anyhow!("No queue families found"))?;
         let queue_priorities = [1.0f32];
         let queue_create_infos = {
             let mut indices = vec![graphics_family_index, present_family_index];
@@ -120,7 +122,7 @@ impl OverallCtx {
             .enabled_features(&device_features)
             .enabled_layer_names(layer_name_pointers);
         let device_create_info = device_create_info_builder.build();
-        let device = unsafe { instance.create_device(physical_device, &device_create_info, None)? };
+        let device = unsafe { instance_ctx.instance.create_device(physical_device, &device_create_info, None)? };
         let graphics_queue = unsafe { device.get_device_queue(graphics_family_index, 0) };
         let present_queue = unsafe { device.get_device_queue(present_family_index, 0) };
         log::debug!("Created logical device w/ graphics queue {} & present queue {}.", graphics_family_index, present_family_index);
@@ -132,11 +134,7 @@ impl Drop for OverallCtx {
     fn drop(&mut self) {
         unsafe {
             self.device.destroy_device(None);
-            if let Some(messenger) = &self.debug_ctx {
-                messenger.destroy();
-            }
-            
         }
-        log::debug!("DeviceCtx dropped");
+        log::debug!("OverallCtx dropped");
     }
 }

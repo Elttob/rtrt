@@ -1,4 +1,4 @@
-use std::ffi::{CStr, CString, c_char};
+use std::{ffi::{CStr, CString, c_char}, sync::Arc};
 use anyhow::Result;
 use ash::{Instance, Entry, vk};
 
@@ -7,18 +7,21 @@ use crate::ctx::{surface, debug};
 use super::{debug::{MessageSeverityFlags, MessageTypeFlags}};
 
 pub struct InstanceCtx {
-    pub instance: Instance
+    pub entry: Arc<Entry>,
+    pub instance: Instance,
+    pub layer_names: Vec<CString>,
+    pub layer_name_pointers: Vec<*const i8>
 }
 
 impl InstanceCtx {
     pub fn new(
-        entry: &Entry,
+        entry: Arc<Entry>,
         app_info: AppInfo,
         user_extensions: &[&CStr],
         validation: Option<(MessageSeverityFlags, MessageTypeFlags)>
     ) -> Result<Self> {
         log::debug!("InstanceCtx creating");
-        let (_layer_names, layer_name_pointers) = Self::get_layer_names_and_pointers(validation.is_some())?;
+        let (layer_names, layer_name_pointers) = Self::get_layer_names_and_pointers(validation.is_some())?;
         let app_info = app_info.try_into()?;
         let all_extensions = user_extensions.into_iter()
             .map(|x| x.as_ptr())
@@ -32,7 +35,10 @@ impl InstanceCtx {
         let instance = unsafe { entry.create_instance(&instance_create_info, None) }?;
 
         Ok(Self {
-            instance
+            entry,
+            instance,
+            layer_names,
+            layer_name_pointers
         })
     }
 

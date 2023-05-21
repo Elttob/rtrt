@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use anyhow::Result;
 use winit::{window::{WindowBuilder, Window}, event_loop::EventLoop};
 
@@ -5,7 +7,7 @@ use crate::ctx::{overall::OverallCtx, debug::{MessageSeverityFlags, MessageTypeF
 
 mod ctx;
 
-fn create_window() -> Result<(EventLoop<()>, Window)> {
+fn create_window() -> Result<(EventLoop<()>, Arc<Window>)> {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
         .with_title("Real Time Ray Tracing")
@@ -24,7 +26,7 @@ fn create_window() -> Result<(EventLoop<()>, Window)> {
         (monitor_size.height - window_size.height) / 2
     ));
 
-    Ok((event_loop, window))
+    Ok((event_loop, Arc::new(window)))
 }
 
 fn main() -> Result<()> {
@@ -35,7 +37,7 @@ fn main() -> Result<()> {
     let (_event_loop, window) = create_window()?;
 
     let _device_ctx = OverallCtx::new(
-        &window,
+        window.clone(),
         Default::default(),
         &[],
         Some((MessageSeverityFlags {

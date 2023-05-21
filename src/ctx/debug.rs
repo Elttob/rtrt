@@ -1,7 +1,9 @@
-use std::ffi::{c_void, CStr};
+use std::{ffi::{c_void, CStr}, sync::Arc};
 
 use anyhow::{Result, bail};
-use ash::{extensions::ext::DebugUtils, vk::{DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, Bool32, DebugUtilsMessengerCallbackDataEXT, self, DebugUtilsMessengerEXT}, Entry, Instance};
+use ash::{extensions::ext::DebugUtils, vk::{DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, Bool32, DebugUtilsMessengerCallbackDataEXT, self, DebugUtilsMessengerEXT},};
+
+use super::instance::InstanceCtx;
 
 pub const VALIDATION_LAYERS: &[&str] = &["VK_LAYER_KHRONOS_validation"];
 
@@ -12,6 +14,72 @@ pub fn required_extension_names(with_validation: bool) -> Vec<*const i8> {
         vec![]
     }
 }
+pub struct DebugCtx {
+    pub instance_ctx: Arc<InstanceCtx>,
+    pub debug_utils: DebugUtils,
+    pub messenger: DebugUtilsMessengerEXT
+}
+
+impl DebugCtx {
+    unsafe extern "system" fn vk_message_callback(
+        message_severity: DebugUtilsMessageSeverityFlagsEXT,
+        _message_types: DebugUtilsMessageTypeFlagsEXT,
+        callback_data: *const DebugUtilsMessengerCallbackDataEXT,
+        _user_data: *mut c_void,
+    ) -> Bool32 {
+        let message_severity = MessageSeverity::try_from(message_severity);
+        let severity_str = if let Ok(message_severity) = &message_severity {
+            message_severity.to_string()
+        } else {
+            "(vkw: unknown)".to_string()
+        };
+        let message = if let Some(callback_data) = callback_data.as_ref() {
+            CStr::from_ptr(callback_data.p_message).to_str().unwrap_or("(vkw: could not read p_message)")
+        } else {
+            "(vkw: could not read callback_data)"
+        };
+
+        match message_severity.unwrap_or(MessageSeverity::Warning) {
+            MessageSeverity::Error => log::error!("[VK/{}] {}", severity_str, message),
+            MessageSeverity::Warning => log::warn!("[VK/{}] {}", severity_str, message),
+            MessageSeverity::Info => log::info!("[VK/{}] {}", severity_str, message),
+            MessageSeverity::Verbose => log::debug!("[VK/{}] {}", severity_str, message),
+        }
+        
+        vk::FALSE
+    }
+
+    pub fn new(
+        instance_ctx: Arc<InstanceCtx>,
+        message_severity: MessageSeverityFlags,
+        message_type: MessageTypeFlags
+    ) -> Result<Self> {
+        log::debug!("DebugUtilsMessenger creating");
+        let debug_utils = DebugUtils::new(&instance_ctx.entry, &instance_ctx.instance);
+        let create_info = DebugUtilsMessengerCreateInfoEXT::builder()
+            .message_severity(message_severity.into())
+            .message_type(message_type.into())
+            .pfn_user_callback(Some(Self::vk_message_callback));
+        let messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }?;
+        
+        Ok(Self {
+            instance_ctx,
+            debug_utils,
+            messenger
+        })
+    }
+}
+
+impl Drop for DebugCtx {
+    fn drop(&mut self) {
+        log::debug!("DebugCtx dropping");
+        unsafe {
+            self.debug_utils.destroy_debug_utils_messenger(self.messenger, None);
+        }
+    }
+}
+
+// SUPPORTING TYPES
 
 #[derive(Debug, strum_macros::Display)]
 pub enum MessageSeverity {
@@ -174,64 +242,5 @@ impl From<MessageTypeFlags> for DebugUtilsMessageTypeFlagsEXT {
             severity |= Self::VALIDATION;
         }
         severity
-    }
-}
-pub struct DebugCtx {
-    debug_utils: DebugUtils,
-    messenger: DebugUtilsMessengerEXT
-}
-
-impl DebugCtx {
-    unsafe extern "system" fn vk_message_callback(
-        message_severity: DebugUtilsMessageSeverityFlagsEXT,
-        _message_types: DebugUtilsMessageTypeFlagsEXT,
-        callback_data: *const DebugUtilsMessengerCallbackDataEXT,
-        _user_data: *mut c_void,
-    ) -> Bool32 {
-        let message_severity = MessageSeverity::try_from(message_severity);
-        let severity_str = if let Ok(message_severity) = &message_severity {
-            message_severity.to_string()
-        } else {
-            "(vkw: unknown)".to_string()
-        };
-        let message = if let Some(callback_data) = callback_data.as_ref() {
-            CStr::from_ptr(callback_data.p_message).to_str().unwrap_or("(vkw: could not read p_message)")
-        } else {
-            "(vkw: could not read callback_data)"
-        };
-
-        match message_severity.unwrap_or(MessageSeverity::Warning) {
-            MessageSeverity::Error => log::error!("[VK/{}] {}", severity_str, message),
-            MessageSeverity::Warning => log::warn!("[VK/{}] {}", severity_str, message),
-            MessageSeverity::Info => log::info!("[VK/{}] {}", severity_str, message),
-            MessageSeverity::Verbose => log::debug!("[VK/{}] {}", severity_str, message),
-        }
-        
-        vk::FALSE
-    }
-
-    pub fn new(
-        entry: &Entry,
-        instance: &Instance,
-        message_severity: MessageSeverityFlags,
-        message_type: MessageTypeFlags
-    ) -> Result<Self> {
-        log::debug!("DebugUtilsMessenger creating");
-        let debug_utils = DebugUtils::new(entry, instance);
-        let create_info = DebugUtilsMessengerCreateInfoEXT::builder()
-            .message_severity(message_severity.into())
-            .message_type(message_type.into())
-            .pfn_user_callback(Some(Self::vk_message_callback));
-        let messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }?;
-        
-        Ok(Self {
-            debug_utils,
-            messenger
-        })
-    }
-
-    pub unsafe fn destroy(&self) {
-        self.debug_utils.destroy_debug_utils_messenger(self.messenger, None);
-        log::debug!("DebugUtilsMessenger dropped");
     }
 }
