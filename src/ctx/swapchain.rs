@@ -1,4 +1,4 @@
-use ash::{extensions::khr::Swapchain, vk::{SwapchainKHR, Format, Extent2D, Image, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR, ColorSpaceKHR, SwapchainCreateInfoKHR, ImageUsageFlags, SharingMode, CompositeAlphaFlagsKHR}};
+use ash::{extensions::khr::Swapchain, vk::{SwapchainKHR, Format, Extent2D, Image, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR, ColorSpaceKHR, SwapchainCreateInfoKHR, ImageUsageFlags, SharingMode, CompositeAlphaFlagsKHR, ImageViewCreateInfo, ImageViewType, ComponentMapping, ComponentSwizzle, ImageSubresourceRange, ImageAspectFlags, ImageView}};
 use anyhow::Result;
 use super::device::DeviceCtx;
 
@@ -51,6 +51,7 @@ pub struct SwapchainCtx<'dev, 'srf, 'ins, 'en> {
     pub swapchain: Swapchain,
     pub swapchain_khr: SwapchainKHR,
     pub images: Vec<Image>,
+    pub image_views: Vec<ImageView>,
     pub swapchain_image_format: Format,
     pub swapchain_extent: Extent2D
 }
@@ -88,6 +89,29 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
         let swapchain = Swapchain::new(&self.surface_ctx.instance_ctx.instance, &self.logical_info.device);
         let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None)? };
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr)? };
+        let image_views = images.iter()
+            .map(|image| {
+                let create_info = ImageViewCreateInfo::builder()
+                    .image(*image)
+                    .view_type(ImageViewType::TYPE_2D)
+                    .format(format.format)
+                    .components(ComponentMapping {
+                        r: ComponentSwizzle::IDENTITY,
+                        g: ComponentSwizzle::IDENTITY,
+                        b: ComponentSwizzle::IDENTITY,
+                        a: ComponentSwizzle::IDENTITY
+                    })
+                    .subresource_range(ImageSubresourceRange {
+                        aspect_mask: ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    })
+                    .build();
+                Ok(unsafe { self.logical_info.device.create_image_view(&create_info, None)? })
+            })
+            .collect::<Result<Vec<_>>>()?;
 
         log::debug!("SwapchainCtx created (format: {:?}, clr space: {:?}, pres mode: {:?}, extent: {:?}, count: {})", format.format, format.color_space, present_mode, extent, image_count);
         Ok(SwapchainCtx {
@@ -95,6 +119,7 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
             swapchain,
             swapchain_khr,
             images,
+            image_views,
             swapchain_image_format: format.format,
             swapchain_extent: extent
         })
@@ -104,6 +129,9 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
 impl Drop for SwapchainCtx<'_, '_, '_, '_> {
     fn drop(&mut self) {
         unsafe {
+            for image_view in self.image_views {
+                self.device_ctx.logical_info.device.destroy_image_view(image_view, None);
+            }
             self.swapchain.destroy_swapchain(self.swapchain_khr, None);
         }
         log::debug!("SwapchainCtx dropped");
