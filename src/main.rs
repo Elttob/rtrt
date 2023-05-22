@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     let swapchain_ctx = device_ctx.create_swapchain_ctx(preferred_extent)?;
     let shader_ctx = device_ctx.create_shader_ctx(&read_spv(&mut File::open(env!("shaders.spv"))?)?, "shaders.spv".to_string())?;
     let render_pass_ctx = swapchain_ctx.create_render_pass_ctx()?;
-    let pipeline_ctx = render_pass_ctx.create_framebuffer_ctx(&shader_ctx)?;
+    let pipeline_ctx = render_pass_ctx.create_framebuffer_ctx()?;
     
     // TODO: 1.3.3.1 here -> https://github.com/adrien-ben/vulkan-tutorial-rs/commits/master?after=6c47737e505aa7b2b5a4d7b2711490b2482c246b+34&branch=master&qualified_name=refs%2Fheads%2Fmaster
 

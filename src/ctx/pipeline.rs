@@ -13,10 +13,10 @@ pub struct PipelineCtx<'sha, 'ren, 'swp, 'dev, 'srf, 'ins, 'en> {
 }
 
 impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
-    pub fn create_pipeline_ctx(
-        &self,
-        shader_ctx: &ShaderCtx<'dev, 'srf, 'ins, 'en>
-    ) -> Result<PipelineCtx> {
+    pub fn create_pipeline_ctx<'sha, 'ren>(
+        &'ren self,
+        shader_ctx: &'sha ShaderCtx<'dev, 'srf, 'ins, 'en>
+    ) -> Result<PipelineCtx<'sha, 'ren, 'swp, 'dev, 'srf, 'ins, 'en>> {
         let entry_point_name_vs = CString::new("main_vs")?;
         let entry_point_name_fs = CString::new("main_fs")?;
         let vertex_shader_state_info = PipelineShaderStageCreateInfo::builder()

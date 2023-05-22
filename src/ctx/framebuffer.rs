@@ -37,8 +37,8 @@ impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
 impl Drop for FramebufferCtx<'_, '_, '_, '_, '_, '_> {
     fn drop(&mut self) {
         unsafe {
-            for framebuffer in self.framebuffers {
-                self.render_pass_ctx.swapchain_ctx.device_ctx.logical_info.device.destroy_framebuffer(framebuffer, None);
+            for framebuffer in self.framebuffers.iter() {
+                self.render_pass_ctx.swapchain_ctx.device_ctx.logical_info.device.destroy_framebuffer(*framebuffer, None);
             }
         }
         log::debug!("FramebufferCtx dropped");

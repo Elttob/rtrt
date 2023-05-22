@@ -129,8 +129,8 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
 impl Drop for SwapchainCtx<'_, '_, '_, '_> {
     fn drop(&mut self) {
         unsafe {
-            for image_view in self.image_views {
-                self.device_ctx.logical_info.device.destroy_image_view(image_view, None);
+            for image_view in self.image_views.iter() {
+                self.device_ctx.logical_info.device.destroy_image_view(*image_view, None);
             }
             self.swapchain.destroy_swapchain(self.swapchain_khr, None);
         }
