@@ -15,7 +15,7 @@ pub struct FramebufferCtx {
 impl FramebufferCtx {
     pub fn new(
         render_pass_ctx: Rc<RenderPassCtx>
-    ) -> Result<FramebufferCtx> {
+    ) -> Result<Rc<FramebufferCtx>> {
         let framebuffers = render_pass_ctx.swapchain_ctx.image_views.iter()
             .map(|view| [*view])
             .map(|attachments| {
@@ -34,12 +34,12 @@ impl FramebufferCtx {
         let fb_command_buffers = CommandBuffersCtx::new(fb_command_pool.clone(), CommandBufferLevel::PRIMARY, framebuffers.len() as u32)?;
 
         log::debug!("FramebufferCtx created");
-        Ok(FramebufferCtx {
+        Ok(Rc::new(FramebufferCtx {
             render_pass_ctx,
             framebuffers,
             fb_command_pool,
             fb_command_buffers
-        })
+        }))
     }
 }
 

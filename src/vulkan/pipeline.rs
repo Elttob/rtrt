@@ -16,7 +16,7 @@ impl PipelineCtx {
     pub fn new(
         render_pass_ctx: Rc<RenderPassCtx>,
         shader_ctx: Rc<ShaderCtx>
-    ) -> Result<PipelineCtx> {
+    ) -> Result<Rc<PipelineCtx>> {
         let entry_point_name_vs = CString::new("main_vs")?;
         let entry_point_name_fs = CString::new("main_fs")?;
         let vertex_shader_state_info = PipelineShaderStageCreateInfo::builder()
@@ -119,12 +119,12 @@ impl PipelineCtx {
         let pipeline = pipelines[0];
 
         log::debug!("PipelineCtx created");
-        Ok(PipelineCtx {
+        Ok(Rc::new(PipelineCtx {
             render_pass_ctx,
             shader_ctx,
             pipeline_layout,
             pipeline
-        })
+        }))
     }
 }
 
