@@ -1,4 +1,4 @@
-use std::{ffi::{c_void, CStr}};
+use std::{ffi::{c_void, CStr}, rc::Rc};
 
 use anyhow::{Result, bail};
 use ash::{extensions::ext::DebugUtils, vk::{DebugUtilsMessengerCreateInfoEXT, DebugUtilsMessageSeverityFlagsEXT, DebugUtilsMessageTypeFlagsEXT, Bool32, DebugUtilsMessengerCallbackDataEXT, self, DebugUtilsMessengerEXT},};
@@ -42,19 +42,19 @@ unsafe extern "system" fn vk_message_callback(
     
     vk::FALSE
 }
-pub struct DebugCtx<'ins, 'en> {
-    pub instance_ctx: &'ins InstanceCtx<'en>,
+pub struct DebugCtx {
+    pub instance_ctx: Rc<InstanceCtx>,
     pub debug_utils: DebugUtils,
     pub messenger: DebugUtilsMessengerEXT
 }
 
-impl<'en> InstanceCtx<'en> {
-    pub fn create_debug_ctx(
-        &self,
+impl DebugCtx {
+    pub fn new(
+        instance_ctx: Rc<InstanceCtx>,
         message_severity: MessageSeverityFlags,
         message_type: MessageTypeFlags
-    ) -> Result<DebugCtx> {
-        let debug_utils = DebugUtils::new(&self.entry_ctx.entry, &self.instance);
+    ) -> Result<Rc<DebugCtx>> {
+        let debug_utils = DebugUtils::new(&instance_ctx.entry_ctx.entry, &instance_ctx.instance);
         let create_info = DebugUtilsMessengerCreateInfoEXT::builder()
             .message_severity(message_severity.into())
             .message_type(message_type.into())
@@ -62,15 +62,15 @@ impl<'en> InstanceCtx<'en> {
         let messenger = unsafe { debug_utils.create_debug_utils_messenger(&create_info, None) }?;
         
         log::debug!("DebugCtx created");
-        Ok(DebugCtx {
-            instance_ctx: self,
+        Ok(Rc::new(DebugCtx {
+            instance_ctx,
             debug_utils,
             messenger
-        })
+        }))
     }
 }
 
-impl Drop for DebugCtx<'_, '_> {
+impl Drop for DebugCtx {
     fn drop(&mut self) {
         unsafe {
             self.debug_utils.destroy_debug_utils_messenger(self.messenger, None);

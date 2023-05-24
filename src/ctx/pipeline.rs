@@ -1,22 +1,22 @@
-use std::ffi::CString;
+use std::{ffi::CString, rc::Rc};
 
 use ash::vk::{PipelineVertexInputStateCreateInfo, PipelineInputAssemblyStateCreateInfo, PrimitiveTopology, Viewport, Rect2D, Offset2D, PipelineViewportStateCreateInfo, PipelineRasterizationStateCreateInfo, PolygonMode, CullModeFlags, FrontFace, PipelineMultisampleStateCreateInfo, SampleCountFlags, PipelineColorBlendAttachmentState, ColorComponentFlags, BlendFactor, BlendOp, LogicOp, PipelineColorBlendStateCreateInfo, PipelineLayoutCreateInfo, PipelineLayout, PipelineShaderStageCreateInfo, ShaderStageFlags, GraphicsPipelineCreateInfo, PipelineCache, Pipeline};
 use anyhow::{Result, bail};
 
 use super::{render_pass::RenderPassCtx, shader::ShaderCtx};
 
-pub struct PipelineCtx<'sha, 'ren, 'swp, 'dev, 'srf, 'ins, 'en> {
-    pub render_pass_ctx: &'ren RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en>,
-    pub shader_ctx: &'sha ShaderCtx<'dev, 'srf, 'ins, 'en>,
+pub struct PipelineCtx {
+    pub render_pass_ctx: Rc<RenderPassCtx>,
+    pub shader_ctx: Rc<ShaderCtx>,
     pub pipeline_layout: PipelineLayout,
     pub pipeline: Pipeline
 }
 
-impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
-    pub fn create_pipeline_ctx<'sha, 'ren>(
-        &'ren self,
-        shader_ctx: &'sha ShaderCtx<'dev, 'srf, 'ins, 'en>
-    ) -> Result<PipelineCtx<'sha, 'ren, 'swp, 'dev, 'srf, 'ins, 'en>> {
+impl PipelineCtx {
+    pub fn new(
+        render_pass_ctx: Rc<RenderPassCtx>,
+        shader_ctx: Rc<ShaderCtx>
+    ) -> Result<PipelineCtx> {
         let entry_point_name_vs = CString::new("main_vs")?;
         let entry_point_name_fs = CString::new("main_fs")?;
         let vertex_shader_state_info = PipelineShaderStageCreateInfo::builder()
@@ -34,21 +34,21 @@ impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
         let vertex_input_info = PipelineVertexInputStateCreateInfo::builder().build();
         let input_assembly_info = PipelineInputAssemblyStateCreateInfo::builder()
             .topology(PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(true)
+            .primitive_restart_enable(false)
             .build();
 
         let viewport = Viewport {
             x: 0.0,
             y: 0.0,
-            width: self.swapchain_ctx.swapchain_extent.width as f32,
-            height: self.swapchain_ctx.swapchain_extent.height as f32,
+            width: render_pass_ctx.swapchain_ctx.swapchain_extent.width as f32,
+            height: render_pass_ctx.swapchain_ctx.swapchain_extent.height as f32,
             min_depth: 0.0,
             max_depth: 1.0
         };
         let viewports = [viewport];
         let scissor = Rect2D {
             offset: Offset2D { x: 0, y: 0 },
-            extent: self.swapchain_ctx.swapchain_extent
+            extent: render_pass_ctx.swapchain_ctx.swapchain_extent
         };
         let scissors = [scissor];
         let viewport_create_info = PipelineViewportStateCreateInfo::builder()
@@ -96,7 +96,7 @@ impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
             .build();
 
         let pipeline_layout_info = PipelineLayoutCreateInfo::builder().build();
-        let pipeline_layout = unsafe { self.swapchain_ctx.device_ctx.logical_info.device.create_pipeline_layout(&pipeline_layout_info, None)? };
+        let pipeline_layout = unsafe { render_pass_ctx.swapchain_ctx.device_ctx.logical_info.device.create_pipeline_layout(&pipeline_layout_info, None)? };
 
         let pipeline_info = GraphicsPipelineCreateInfo::builder()
             .stages(&shader_states_infos)
@@ -107,11 +107,11 @@ impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
             .multisample_state(&multisampling_create_info)
             .color_blend_state(&colour_blending_info)
             .layout(pipeline_layout)
-            .render_pass(self.render_pass)
+            .render_pass(render_pass_ctx.render_pass)
             .subpass(0)
             .build();
         let pipeline_infos = [pipeline_info];
-        let maybe_pipelines = unsafe { self.swapchain_ctx.device_ctx.logical_info.device.create_graphics_pipelines(PipelineCache::null(), &pipeline_infos, None) };
+        let maybe_pipelines = unsafe { render_pass_ctx.swapchain_ctx.device_ctx.logical_info.device.create_graphics_pipelines(PipelineCache::null(), &pipeline_infos, None) };
         let pipelines = match maybe_pipelines {
             Ok(pipelines) => pipelines,
             Err((_, result)) => bail!(result)
@@ -120,7 +120,7 @@ impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
 
         log::debug!("PipelineCtx created");
         Ok(PipelineCtx {
-            render_pass_ctx: self,
+            render_pass_ctx,
             shader_ctx,
             pipeline_layout,
             pipeline
@@ -128,7 +128,7 @@ impl<'swp, 'dev, 'srf, 'ins, 'en> RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
     }
 }
 
-impl Drop for PipelineCtx<'_, '_, '_, '_, '_, '_, '_> {
+impl Drop for PipelineCtx {
     fn drop(&mut self) {
         unsafe {
             self.render_pass_ctx.swapchain_ctx.device_ctx.logical_info.device.destroy_pipeline(self.pipeline, None);

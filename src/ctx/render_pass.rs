@@ -1,19 +1,21 @@
+use std::rc::Rc;
+
 use anyhow::Result;
 use ash::vk::{AttachmentDescription, SampleCountFlags, AttachmentLoadOp, ImageLayout, AttachmentReference, SubpassDescription, PipelineBindPoint, AttachmentStoreOp, RenderPassCreateInfo, RenderPass};
 
 use super::swapchain::SwapchainCtx;
 
-pub struct RenderPassCtx<'swp, 'dev, 'srf, 'ins, 'en> {
-    pub swapchain_ctx: &'swp SwapchainCtx<'dev, 'srf, 'ins, 'en>,
+pub struct RenderPassCtx {
+    pub swapchain_ctx: Rc<SwapchainCtx>,
     pub render_pass: RenderPass
 }
 
-impl<'dev, 'srf, 'ins, 'en> SwapchainCtx<'dev, 'srf, 'ins, 'en> {
-    pub fn create_render_pass_ctx(
-        &self,
-    ) -> Result<RenderPassCtx> {
+impl RenderPassCtx {
+    pub fn new(
+        swapchain_ctx: Rc<SwapchainCtx>
+    ) -> Result<Rc<RenderPassCtx>> {
         let attachment_desc = AttachmentDescription::builder()
-            .format(self.swapchain_image_format)
+            .format(swapchain_ctx.swapchain_image_format)
             .samples(SampleCountFlags::TYPE_1)
             .load_op(AttachmentLoadOp::CLEAR)
             .store_op(AttachmentStoreOp::STORE)
@@ -36,17 +38,17 @@ impl<'dev, 'srf, 'ins, 'en> SwapchainCtx<'dev, 'srf, 'ins, 'en> {
             .subpasses(&subpass_descs)
             .build();
 
-        let render_pass = unsafe { self.device_ctx.logical_info.device.create_render_pass(&render_pass_info, None)? };
+        let render_pass = unsafe { swapchain_ctx.device_ctx.logical_info.device.create_render_pass(&render_pass_info, None)? };
         
         log::debug!("RenderPassCtx created");
-        Ok(RenderPassCtx {
-            swapchain_ctx: self,
+        Ok(Rc::new(RenderPassCtx {
+            swapchain_ctx,
             render_pass
-        })
+        }))
     }
 }
 
-impl Drop for RenderPassCtx<'_, '_, '_, '_, '_> {
+impl Drop for RenderPassCtx {
     fn drop(&mut self) {
         unsafe {
             self.swapchain_ctx.device_ctx.logical_info.device.destroy_render_pass(self.render_pass, None);

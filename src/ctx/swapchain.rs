@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use ash::{extensions::khr::Swapchain, vk::{SwapchainKHR, Format, Extent2D, Image, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR, ColorSpaceKHR, SwapchainCreateInfoKHR, ImageUsageFlags, SharingMode, CompositeAlphaFlagsKHR, ImageViewCreateInfo, ImageViewType, ComponentMapping, ComponentSwizzle, ImageSubresourceRange, ImageAspectFlags, ImageView}};
 use anyhow::Result;
 use super::device::DeviceCtx;
@@ -46,8 +48,8 @@ fn select_extent(
     }
 }
 
-pub struct SwapchainCtx<'dev, 'srf, 'ins, 'en> {
-    pub device_ctx: &'dev DeviceCtx<'srf, 'ins, 'en>,
+pub struct SwapchainCtx {
+    pub device_ctx: Rc<DeviceCtx>,
     pub swapchain: Swapchain,
     pub swapchain_khr: SwapchainKHR,
     pub images: Vec<Image>,
@@ -56,12 +58,12 @@ pub struct SwapchainCtx<'dev, 'srf, 'ins, 'en> {
     pub swapchain_extent: Extent2D
 }
 
-impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
-    pub fn create_swapchain_ctx(
-        &self,
+impl SwapchainCtx {
+    pub fn new(
+        device_ctx: Rc<DeviceCtx>,
         preferred_extent: Extent2D
-    ) -> Result<SwapchainCtx> {
-        let support_details = &self.physical_info.swapchain_support_details;
+    ) -> Result<Rc<SwapchainCtx>> {
+        let support_details = &device_ctx.physical_info.swapchain_support_details;
         let format = select_surface_format(&support_details.formats);
         let present_mode = select_surface_present_mode(&support_details.present_modes);
         let extent = select_extent(support_details.capabilities, preferred_extent);
@@ -70,9 +72,9 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
             let preferred = support_details.capabilities.min_image_count + 1;
             if max == 0 || preferred <= max { preferred } else { max }
         };
-        let image_sharing_mode = if self.physical_info.dedup_family_indices.len() > 1 { SharingMode::CONCURRENT } else { SharingMode::EXCLUSIVE };
+        let image_sharing_mode = if device_ctx.physical_info.dedup_family_indices.len() > 1 { SharingMode::CONCURRENT } else { SharingMode::EXCLUSIVE };
         let create_info = SwapchainCreateInfoKHR::builder()
-            .surface(self.surface_ctx.surface_khr)
+            .surface(device_ctx.surface_ctx.surface_khr)
             .min_image_count(image_count)
             .image_format(format.format)
             .image_color_space(format.color_space)
@@ -80,13 +82,13 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
             .image_array_layers(1)
             .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
             .image_sharing_mode(image_sharing_mode)
-            .queue_family_indices(&self.physical_info.dedup_family_indices)
+            .queue_family_indices(&device_ctx.physical_info.dedup_family_indices)
             .pre_transform(support_details.capabilities.current_transform)
             .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(present_mode)
             .clipped(true)
             .build();
-        let swapchain = Swapchain::new(&self.surface_ctx.instance_ctx.instance, &self.logical_info.device);
+        let swapchain = Swapchain::new(&device_ctx.surface_ctx.instance_ctx.instance, &device_ctx.logical_info.device);
         let swapchain_khr = unsafe { swapchain.create_swapchain(&create_info, None)? };
         let images = unsafe { swapchain.get_swapchain_images(swapchain_khr)? };
         let image_views = images.iter()
@@ -109,24 +111,24 @@ impl<'srf, 'ins, 'en> DeviceCtx<'srf, 'ins, 'en> {
                         layer_count: 1,
                     })
                     .build();
-                Ok(unsafe { self.logical_info.device.create_image_view(&create_info, None)? })
+                Ok(unsafe { device_ctx.logical_info.device.create_image_view(&create_info, None)? })
             })
             .collect::<Result<Vec<_>>>()?;
 
         log::debug!("SwapchainCtx created (format: {:?}, clr space: {:?}, pres mode: {:?}, extent: {:?}, count: {})", format.format, format.color_space, present_mode, extent, image_count);
-        Ok(SwapchainCtx {
-            device_ctx: self,
+        Ok(Rc::new(SwapchainCtx {
+            device_ctx,
             swapchain,
             swapchain_khr,
             images,
             image_views,
             swapchain_image_format: format.format,
             swapchain_extent: extent
-        })
+        }))
     }
 }
 
-impl Drop for SwapchainCtx<'_, '_, '_, '_> {
+impl Drop for SwapchainCtx {
     fn drop(&mut self) {
         unsafe {
             for image_view in self.image_views.iter() {

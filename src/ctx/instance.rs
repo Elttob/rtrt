@@ -1,4 +1,4 @@
-use std::{ffi::{CStr, CString, c_char}};
+use std::{ffi::{CStr, CString, c_char}, rc::Rc};
 use anyhow::Result;
 use ash::{Instance, vk::{self, API_VERSION_1_2}};
 
@@ -22,20 +22,20 @@ fn get_layer_names_and_pointers(
     }
 }
 
-pub struct InstanceCtx<'en> {
-    pub entry_ctx: &'en EntryCtx,
+pub struct InstanceCtx {
+    pub entry_ctx: Rc<EntryCtx>,
     pub instance: Instance,
     pub layer_names: Vec<CString>,
     pub layer_name_pointers: Vec<*const i8>
 }
 
-impl EntryCtx {
-    pub fn create_instance_ctx(
-        &self,
+impl InstanceCtx {
+    pub fn new(
+        entry_ctx: Rc<EntryCtx>,
         app_info: AppInfo,
         user_extensions: &[&CStr],
         with_validation: bool
-    ) -> Result<InstanceCtx> {
+    ) -> Result<Rc<InstanceCtx>> {
         let (layer_names, layer_name_pointers) = get_layer_names_and_pointers(with_validation)?;
         let app_info = app_info.try_into()?;
         let all_extensions = user_extensions.into_iter()
@@ -47,19 +47,19 @@ impl EntryCtx {
             .application_info(&app_info)
             .enabled_extension_names(&all_extensions)
             .enabled_layer_names(&layer_name_pointers);
-        let instance = unsafe { self.entry.create_instance(&instance_create_info, None) }?;
+        let instance = unsafe { entry_ctx.entry.create_instance(&instance_create_info, None) }?;
 
         log::debug!("InstanceCtx created");
-        Ok(InstanceCtx {
-            entry_ctx: self,
+        Ok(Rc::new(InstanceCtx {
+            entry_ctx,
             instance,
             layer_names,
             layer_name_pointers
-        })
+        }))
     }    
 }
 
-impl Drop for InstanceCtx<'_> {
+impl Drop for InstanceCtx {
     fn drop(&mut self) {
         unsafe {
             self.instance.destroy_instance(None);

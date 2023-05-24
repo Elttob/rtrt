@@ -1,4 +1,4 @@
-use std::{ptr, ffi::c_void, sync::Arc};
+use std::{ptr, ffi::c_void, sync::Arc, rc::Rc};
 use anyhow::Result;
 use ash::{extensions::khr::{Win32Surface, Surface}, Entry, Instance, vk::{self, PhysicalDevice, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR}};
 use winit::{window::Window, platform::windows::WindowExtWindows};
@@ -28,13 +28,13 @@ pub unsafe fn create_surface_win32(
     win32_surface_loader.create_win32_surface(&win32_create_info, None)
 }
 
-pub struct SurfaceCtx<'ins, 'en> {
-    pub instance_ctx: &'ins InstanceCtx<'en>,
+pub struct SurfaceCtx {
+    pub instance_ctx: Rc<InstanceCtx>,
     pub surface: Surface,
     pub surface_khr: vk::SurfaceKHR
 }
 
-impl SurfaceCtx<'_, '_> {
+impl SurfaceCtx {
     pub fn swapchain_support_details(
         &self,
         physical_device: PhysicalDevice
@@ -50,24 +50,24 @@ impl SurfaceCtx<'_, '_> {
     }
 }
 
-impl<'en> InstanceCtx<'en> {
-    pub fn create_surface_ctx(
-        &self,
+impl SurfaceCtx {
+    pub fn new(
+        instance_ctx: Rc<InstanceCtx>,
         window: Arc<Window>
-    ) -> Result<SurfaceCtx> {
-        let surface = Surface::new(&self.entry_ctx.entry, &self.instance);
-        let surface_khr = unsafe { create_surface_win32(&self.entry_ctx.entry, &self.instance, &window)? };
+    ) -> Result<Rc<SurfaceCtx>> {
+        let surface = Surface::new(&instance_ctx.entry_ctx.entry, &instance_ctx.instance);
+        let surface_khr = unsafe { create_surface_win32(&instance_ctx.entry_ctx.entry, &instance_ctx.instance, &window)? };
 
         log::debug!("SurfaceCtx created");
-        Ok(SurfaceCtx {
-            instance_ctx: self,
+        Ok(Rc::new(SurfaceCtx {
+            instance_ctx,
             surface,
             surface_khr
-        })
+        }))
     }
 }
 
-impl Drop for SurfaceCtx<'_, '_> {
+impl Drop for SurfaceCtx {
     fn drop(&mut self) {
         unsafe {
             self.surface.destroy_surface(self.surface_khr, None);

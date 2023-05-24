@@ -1,10 +1,10 @@
 use std::{sync::Arc, fs::File};
 
 use anyhow::Result;
-use ash::{Entry, vk::Extent2D, util::read_spv};
+use ash::{vk::Extent2D, util::read_spv};
 use winit::{window::{WindowBuilder, Window}, event_loop::EventLoop};
 
-use crate::ctx::{debug::{MessageSeverityFlags, MessageTypeFlags}, entry::EntryCtx};
+use crate::ctx::{debug::{MessageSeverityFlags, MessageTypeFlags, DebugCtx}, entry::EntryCtx, instance::InstanceCtx, surface::SurfaceCtx, device::DeviceCtx, swapchain::SwapchainCtx, shader::ShaderCtx, render_pass::RenderPassCtx, pipeline::PipelineCtx, framebuffer::FramebufferCtx};
 
 mod ctx;
 
@@ -42,18 +42,45 @@ fn main() -> Result<()> {
         height: window.inner_size().height
     };
 
-    let entry_ctx = EntryCtx { entry: Entry::linked() };
-    let instance_ctx = entry_ctx.create_instance_ctx(Default::default(), &[], true)?;
-    let _debug_ctx = instance_ctx.create_debug_ctx(
-        MessageSeverityFlags { warning: true, error: true, ..Default::default() },
+    let entry = EntryCtx::new();
+    let instance = InstanceCtx::new(
+        entry.clone(), 
+        Default::default(), 
+        &[],
+        true
+    )?;
+    let _debug = DebugCtx::new(
+        instance.clone(), 
+        MessageSeverityFlags { warning: true, error: true, ..Default::default() }, 
         MessageTypeFlags { validation: true, ..Default::default() }
     )?;
-    let surface_ctx = instance_ctx.create_surface_ctx(window.clone())?;
-    let device_ctx = surface_ctx.create_device_ctx()?;
-    let swapchain_ctx = device_ctx.create_swapchain_ctx(preferred_extent)?;
-    let shader_ctx = device_ctx.create_shader_ctx(&read_spv(&mut File::open(env!("shaders.spv"))?)?, "shaders.spv".to_string())?;
-    let render_pass_ctx = swapchain_ctx.create_render_pass_ctx()?;
-    let pipeline_ctx = render_pass_ctx.create_framebuffer_ctx()?;
+    let surface = SurfaceCtx::new(
+        instance.clone(), 
+        window.clone()
+    )?;
+    let device = DeviceCtx::new(
+        surface.clone()
+    )?;
+    let swapchain = SwapchainCtx::new(
+        device.clone(), 
+        preferred_extent
+    )?;
+    let shader = ShaderCtx::new(
+        device.clone(), 
+        &read_spv(&mut File::open(env!("shaders.spv"))?)?, 
+        "shaders.spv".to_string()
+    )?;
+    let render_pass = RenderPassCtx::new(
+        swapchain.clone()
+    )?;
+    let pipeline = PipelineCtx::new(
+        render_pass.clone(), 
+        shader.clone()
+    )?;
+    let framebuffer = FramebufferCtx::new(
+        render_pass.clone()
+    )?;
+
     
     // TODO: 1.3.3.1 here -> https://github.com/adrien-ben/vulkan-tutorial-rs/commits/master?after=6c47737e505aa7b2b5a4d7b2711490b2482c246b+34&branch=master&qualified_name=refs%2Fheads%2Fmaster
 
