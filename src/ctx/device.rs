@@ -1,13 +1,18 @@
 use std::{ffi::{CStr, c_char, CString}, rc::Rc};
 use anyhow::Result;
-use ash::{vk::{self, PhysicalDevice, Queue}, Device, extensions::khr::Swapchain};
+use ash::{vk::{self, PhysicalDevice, Queue, PhysicalDeviceVulkanMemoryModelFeatures}, Device, extensions::khr::Swapchain};
 
 use super::surface::{SurfaceCtx, SwapchainSupportDetails};
 
-pub const REQUIRED_DEVICE_EXT: &[&CStr] = &[Swapchain::name()];
+fn get_required_device_extensions() -> Vec<CString> {
+    vec![
+        Swapchain::name().to_owned()
+    ]
+}
 
 fn select_physical_device(
-    surface_ctx: &SurfaceCtx
+    surface_ctx: &SurfaceCtx,
+    required_device_extensions: &[&CStr]
 ) -> Result<PhysicalDeviceInfo> {
     let devices = unsafe { surface_ctx.instance_ctx.instance.enumerate_physical_devices() }?;
     let devices_and_queues = devices.into_iter()
@@ -16,7 +21,7 @@ fn select_physical_device(
     devices_and_queues.into_iter()
     .filter_map(|(device, queues)| {
         let (graphics_family_index, present_family_index) = queues?;
-        let supports_required_extensions = test_required_extensions(surface_ctx, device).ok()?;
+        let supports_required_extensions = test_required_extensions(surface_ctx, device, required_device_extensions).ok()?;
         if !supports_required_extensions { return None; }
         let swapchain_support_details = surface_ctx.swapchain_support_details(device).ok()?;
         let swapchain_is_adequate = !swapchain_support_details.formats.is_empty() && !swapchain_support_details.present_modes.is_empty();
@@ -38,13 +43,14 @@ fn select_physical_device(
 
 fn test_required_extensions(
     surface_ctx: &SurfaceCtx,
-    device: PhysicalDevice
+    device: PhysicalDevice,
+    required_device_extensions: &[&CStr]
 ) -> Result<bool> {
     let extension_props = unsafe { surface_ctx.instance_ctx.instance.enumerate_device_extension_properties(device)? };
     let extension_names = extension_props.iter()
         .map(|x| unsafe { CStr::from_ptr(x.extension_name.as_ptr()) })
         .collect::<Vec<_>>();
-    let has_all_extensions = REQUIRED_DEVICE_EXT.iter().all(|x| extension_names.contains(x));
+    let has_all_extensions = required_device_extensions.iter().all(|x| extension_names.contains(x));
     Ok(has_all_extensions)
 }
 
@@ -76,7 +82,8 @@ fn find_queue_families(
 fn create_logical_device(
     surface_ctx: &SurfaceCtx,
     physical_info: &PhysicalDeviceInfo,
-    layer_name_pointers: &[*const c_char]
+    layer_name_pointers: &[*const c_char],
+    required_device_extensions: &[&CStr]
 ) -> Result<LogicalDeviceInfo> {
     let queue_priorities = [1.0f32];
     let queue_create_infos = physical_info.dedup_family_indices.iter()
@@ -85,13 +92,17 @@ fn create_logical_device(
             .queue_priorities(&queue_priorities)
             .build()
         ).collect::<Vec<_>>();
-    let device_extensions_ptrs = REQUIRED_DEVICE_EXT.iter().map(|x| x.as_ptr()).collect::<Vec<_>>();
+    let device_extensions_ptrs = required_device_extensions.iter().map(|x| x.as_ptr()).collect::<Vec<_>>();
     let device_features = vk::PhysicalDeviceFeatures::builder().build();
     let device_create_info = vk::DeviceCreateInfo::builder()
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(&device_extensions_ptrs)
         .enabled_features(&device_features)
         .enabled_layer_names(layer_name_pointers)
+        .push_next(&mut 
+            PhysicalDeviceVulkanMemoryModelFeatures::builder()
+            .vulkan_memory_model(true)
+        )
         .build();
     let device = unsafe { surface_ctx.instance_ctx.instance.create_device(physical_info.device, &device_create_info, None)? };
     let graphics_queue = unsafe { device.get_device_queue(physical_info.graphics_family_index, 0) };
@@ -112,8 +123,10 @@ impl DeviceCtx {
     pub fn new(
         surface_ctx: Rc<SurfaceCtx>
     ) -> Result<Rc<DeviceCtx>> {
-        let physical_info = select_physical_device(&surface_ctx)?;
-        let logical_info = create_logical_device(&surface_ctx, &physical_info, &surface_ctx.instance_ctx.layer_name_pointers)?;
+        let required_ext = get_required_device_extensions();
+        let required_ext_ref = required_ext.iter().map(CString::as_c_str).collect::<Vec<_>>();
+        let physical_info = select_physical_device(&surface_ctx, &required_ext_ref)?;
+        let logical_info = create_logical_device(&surface_ctx, &physical_info, &surface_ctx.instance_ctx.layer_name_pointers, &required_ext_ref)?;
         
         log::debug!("DeviceCtx created ({})", physical_info.debug_device_name.to_str().unwrap_or("vkw: device is not nameable"));
         Ok(Rc::new(DeviceCtx {
