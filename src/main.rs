@@ -75,11 +75,11 @@ fn main() -> Result<()> {
     let render_pass = RenderPassCtx::new(
         swapchain.clone()
     )?;
-    let pipeline = PipelineCtx::new(
+    let _pipeline = PipelineCtx::new(
         render_pass.clone(), 
         shader.clone()
     )?;
-    let framebuffer = FramebufferCtx::new(
+    let _framebuffer = FramebufferCtx::new(
         render_pass.clone()
     )?;
 
@@ -94,10 +94,10 @@ fn main() -> Result<()> {
         event_loop.run(move |event, _, control_flow| match event {
             Event::WindowEvent { ref event, window_id } if window_id == window.id() => match event {
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
-                WindowEvent::Resized(physical_size) => {
+                WindowEvent::Resized(_physical_size) => {
                     // present_ctx.recreate_swapchain(&device_ctx, *physical_size).unwrap();
                 },
-                WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
+                WindowEvent::ScaleFactorChanged { .. } => {
                     // present_ctx.recreate_swapchain(&device_ctx, **new_inner_size).unwrap();
                 },
                 WindowEvent::CursorEntered { .. } => {
