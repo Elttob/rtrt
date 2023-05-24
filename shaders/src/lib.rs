@@ -9,7 +9,7 @@ pub fn main_fs(
     in_colour: Vec3,
     output: &mut Vec4
 ) {
-    *output = in_colour.extend(1.0);
+    *output = in_colour.extend(1.00);
 }
 
 const POSITIONS: [Vec2; 3] = [

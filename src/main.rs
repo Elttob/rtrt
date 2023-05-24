@@ -5,9 +5,9 @@ use ash::{vk::Extent2D, util::read_spv};
 use glam::vec2;
 use winit::{window::{WindowBuilder, Window}, event_loop::{EventLoop, ControlFlow}, event::{Event, WindowEvent}};
 
-use crate::{ctx::{debug::{MessageSeverityFlags, MessageTypeFlags, DebugCtx}, entry::EntryCtx, instance::InstanceCtx, surface::SurfaceCtx, device::DeviceCtx, swapchain::SwapchainCtx, shader::ShaderCtx, render_pass::RenderPassCtx, pipeline::PipelineCtx, framebuffer::FramebufferCtx}, input::Input};
+use crate::{vulkan::{debug::{MessageSeverityFlags, MessageTypeFlags, DebugCtx}, entry::EntryCtx, instance::InstanceCtx, surface::SurfaceCtx, device::DeviceCtx, swapchain::SwapchainCtx, shader::ShaderCtx, render_pass::RenderPassCtx, pipeline::PipelineCtx, framebuffer::FramebufferCtx}, input::Input};
 
-mod ctx;
+mod vulkan;
 mod input;
 
 fn create_window() -> Result<(EventLoop<()>, Arc<Window>)> {
@@ -69,7 +69,7 @@ fn main() -> Result<()> {
     )?;
     let shader = ShaderCtx::new(
         device.clone(), 
-        &read_spv(&mut File::open(env!("shaders.spv"))?)?, 
+        &read_spv(&mut File::open("in/spirv/shaders.spv")?)?, 
         "shaders.spv".to_string()
     )?;
     let render_pass = RenderPassCtx::new(

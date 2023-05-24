@@ -7,6 +7,7 @@ pub mod framebuffer;
 pub mod instance;
 pub mod pipeline;
 pub mod render_pass;
+pub mod semaphore;
 pub mod shader;
 pub mod surface;
 pub mod swapchain;

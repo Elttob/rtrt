@@ -2,7 +2,7 @@ use std::{ffi::{CStr, CString, c_char}, rc::Rc};
 use anyhow::Result;
 use ash::{Instance, vk::{self, API_VERSION_1_2}};
 
-use crate::ctx::{surface, debug};
+use super::{surface, debug};
 
 use super::entry::EntryCtx;
 
