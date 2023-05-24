@@ -103,7 +103,7 @@ impl Input {
 		}
 	}
 
-	pub fn snapshot(&self) -> InputSnapshot {
+	pub fn _snapshot(&self) -> InputSnapshot {
 		InputSnapshot {
 			move_axes: vec3(
 				if self.move_right { 1.0 } else { 0.0 } - if self.move_left { 1.0 } else { 0.0 },
