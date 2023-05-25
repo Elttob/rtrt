@@ -161,7 +161,6 @@ impl Renderer {
     pub fn render(
         &mut self
     ) -> Result<()> {
-        log::debug!("Rendering...");
         let sized_renderer = match &mut self.sized_renderer {
             Some(renderer) => renderer,
             None => return Ok(())
@@ -173,11 +172,9 @@ impl Renderer {
         let image_available_semaphore = self.image_available_semaphores[self.current_frame_in_flight].semaphore;
         let render_finished_semaphore = self.render_finished_semaphores[self.current_frame_in_flight].semaphore;
         let in_flight_fence = self.in_flight_fences[self.current_frame_in_flight].fence;
-        let command_buffer = framebuffer.fb_command_buffers.buffers[self.current_frame_in_flight];
         let image_available_semaphores = [image_available_semaphore];
         let render_finished_semaphores = [render_finished_semaphore];
         let in_flight_fences = [in_flight_fence];
-        let command_buffers = [command_buffer];
 
         // This fence is reset (i.e. will block) when a previous render() call decides to submit work.
         // Waiting for it here ensures we don't override that render() call's work.
@@ -186,8 +183,7 @@ impl Renderer {
         let acquire_result = unsafe { swapchain.swapchain.acquire_next_image(
             swapchain.swapchain_khr, std::u64::MAX, image_available_semaphore, Fence::null()
         ) };
-
-        // TODO Oh hey this might be a problem. The command buffer won't target this image index.
+        
         let image_index = match acquire_result {
             Ok((image_index, _suboptimal)) => image_index,
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
@@ -197,6 +193,8 @@ impl Renderer {
             Err(e) => return Err(e.into())
         };
         let images_indices = [image_index];
+        let command_buffer = framebuffer.fb_command_buffers.buffers[image_index as usize];
+        let command_buffers = [command_buffer];
 
         // We should only reset the fence when we're actually going to submit work
         // that will re-signal it later on, otherwise it'll hang forever.
