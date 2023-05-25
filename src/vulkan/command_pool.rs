@@ -13,10 +13,11 @@ pub struct CommandPoolCtx {
 impl CommandPoolCtx {
     pub fn new(
         device_ctx: Rc<DeviceCtx>,
+        flags: CommandPoolCreateFlags,
     ) -> Result<Rc<CommandPoolCtx>> {
         let command_pool_info = CommandPoolCreateInfo::builder()
             .queue_family_index(device_ctx.physical_info.graphics_family_index)
-            .flags(CommandPoolCreateFlags::empty())
+            .flags(flags)
             .build();
 
         let command_pool = unsafe { device_ctx.logical_info.device.create_command_pool(&command_pool_info, None)? };

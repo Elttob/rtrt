@@ -1,13 +1,27 @@
 use std::{ffi::{CStr, c_char, CString}, rc::Rc};
 use anyhow::Result;
-use ash::{vk::{self, PhysicalDevice, Queue, PhysicalDeviceVulkanMemoryModelFeatures}, Device, extensions::khr::Swapchain};
+use ash::{vk::{self, PhysicalDevice, Queue, PhysicalDeviceVulkanMemoryModelFeatures, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR}, Device, extensions::khr::Swapchain};
 
-use super::surface::{SurfaceCtx, SwapchainSupportDetails};
+use super::surface::SurfaceCtx;
 
 fn get_required_device_extensions() -> Vec<CString> {
     vec![
         Swapchain::name().to_owned()
     ]
+}
+
+fn current_swapchain_support_impl(
+    surface_ctx: &SurfaceCtx,
+    physical_device: PhysicalDevice
+) -> Result<SwapchainSupportDetails> {
+    let capabilities = unsafe { surface_ctx.surface.get_physical_device_surface_capabilities(physical_device, surface_ctx.surface_khr)? };
+    let formats = unsafe { surface_ctx.surface.get_physical_device_surface_formats(physical_device, surface_ctx.surface_khr)? };
+    let present_modes = unsafe { surface_ctx.surface.get_physical_device_surface_present_modes(physical_device, surface_ctx.surface_khr)? };
+    Ok(SwapchainSupportDetails {
+        capabilities,
+        formats,
+        present_modes,
+    })
 }
 
 fn select_physical_device(
@@ -23,7 +37,7 @@ fn select_physical_device(
         let (graphics_family_index, present_family_index) = queues?;
         let supports_required_extensions = test_required_extensions(surface_ctx, device, required_device_extensions).ok()?;
         if !supports_required_extensions { return None; }
-        let swapchain_support_details = surface_ctx.swapchain_support_details(device).ok()?;
+        let swapchain_support_details = current_swapchain_support_impl(surface_ctx, device).ok()?;
         let swapchain_is_adequate = !swapchain_support_details.formats.is_empty() && !swapchain_support_details.present_modes.is_empty();
         if !swapchain_is_adequate { return None; }
         let props = unsafe { surface_ctx.instance_ctx.instance.get_physical_device_properties(device) };
@@ -34,7 +48,6 @@ fn select_physical_device(
             graphics_family_index,
             present_family_index,
             dedup_family_indices,
-            swapchain_support_details,
             debug_device_name,
         })
     })
@@ -135,6 +148,19 @@ impl DeviceCtx {
             logical_info
         }))
     }
+
+    pub fn current_swapchain_support(
+        &self
+    ) -> Result<SwapchainSupportDetails> {
+        current_swapchain_support_impl(&self.surface_ctx, self.physical_info.device)
+    }
+
+    pub fn wait_for_idle(
+        &self
+    ) -> Result<()> {
+        unsafe { self.logical_info.device.device_wait_idle()? }
+        Ok(())
+    }
 }
 
 impl Drop for DeviceCtx {
@@ -151,7 +177,6 @@ pub struct PhysicalDeviceInfo {
     pub graphics_family_index: u32,
     pub present_family_index: u32,
     pub dedup_family_indices: Vec<u32>,
-    pub swapchain_support_details: SwapchainSupportDetails,
     pub debug_device_name: CString
 }
 
@@ -159,4 +184,10 @@ pub struct LogicalDeviceInfo {
     pub device: Device,
     pub graphics_queue: Queue,
     pub present_queue: Queue
+}
+
+pub struct SwapchainSupportDetails {
+    pub capabilities: SurfaceCapabilitiesKHR,
+    pub formats: Vec<SurfaceFormatKHR>,
+    pub present_modes: Vec<PresentModeKHR>
 }

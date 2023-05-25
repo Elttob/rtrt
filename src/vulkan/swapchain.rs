@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use ash::{extensions::khr::Swapchain, vk::{SwapchainKHR, Format, Extent2D, Image, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR, ColorSpaceKHR, SwapchainCreateInfoKHR, ImageUsageFlags, SharingMode, CompositeAlphaFlagsKHR, ImageViewCreateInfo, ImageViewType, ComponentMapping, ComponentSwizzle, ImageSubresourceRange, ImageAspectFlags, ImageView}};
 use anyhow::Result;
-use super::device::DeviceCtx;
+use super::device::{DeviceCtx, SwapchainSupportDetails};
 
 fn select_surface_format(
     available_formats: &[SurfaceFormatKHR],
@@ -52,6 +52,7 @@ pub struct SwapchainCtx {
     pub device_ctx: Rc<DeviceCtx>,
     pub swapchain: Swapchain,
     pub swapchain_khr: SwapchainKHR,
+    pub swapchain_support_details: SwapchainSupportDetails,
     pub images: Vec<Image>,
     pub image_views: Vec<ImageView>,
     pub swapchain_image_format: Format,
@@ -63,13 +64,14 @@ impl SwapchainCtx {
         device_ctx: Rc<DeviceCtx>,
         preferred_extent: Extent2D
     ) -> Result<Rc<SwapchainCtx>> {
-        let support_details = &device_ctx.physical_info.swapchain_support_details;
-        let format = select_surface_format(&support_details.formats);
-        let present_mode = select_surface_present_mode(&support_details.present_modes);
-        let extent = select_extent(support_details.capabilities, preferred_extent);
+        let swapchain_support_details = device_ctx.current_swapchain_support()?;
+        let format = select_surface_format(&swapchain_support_details.formats);
+        let present_mode = select_surface_present_mode(&swapchain_support_details.present_modes);
+        let extent = select_extent(swapchain_support_details.capabilities, preferred_extent);
+        log::debug!("I prefer {:?} but I ended up with {:?}", preferred_extent, extent);
         let image_count = {
-            let max = support_details.capabilities.max_image_count;
-            let preferred = support_details.capabilities.min_image_count + 1;
+            let max = swapchain_support_details.capabilities.max_image_count;
+            let preferred = swapchain_support_details.capabilities.min_image_count + 1;
             if max == 0 || preferred <= max { preferred } else { max }
         };
         let image_sharing_mode = if device_ctx.physical_info.dedup_family_indices.len() > 1 { SharingMode::CONCURRENT } else { SharingMode::EXCLUSIVE };
@@ -83,7 +85,7 @@ impl SwapchainCtx {
             .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
             .image_sharing_mode(image_sharing_mode)
             .queue_family_indices(&device_ctx.physical_info.dedup_family_indices)
-            .pre_transform(support_details.capabilities.current_transform)
+            .pre_transform(swapchain_support_details.capabilities.current_transform)
             .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
             .present_mode(present_mode)
             .clipped(true)
@@ -120,6 +122,7 @@ impl SwapchainCtx {
             device_ctx,
             swapchain,
             swapchain_khr,
+            swapchain_support_details,
             images,
             image_views,
             swapchain_image_format: format.format,

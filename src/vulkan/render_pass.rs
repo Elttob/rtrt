@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
 use anyhow::Result;
-use ash::vk::{AttachmentDescription, SampleCountFlags, AttachmentLoadOp, ImageLayout, AttachmentReference, SubpassDescription, PipelineBindPoint, AttachmentStoreOp, RenderPassCreateInfo, RenderPass};
+use ash::vk::{AttachmentDescription, SampleCountFlags, AttachmentLoadOp, ImageLayout, AttachmentReference, SubpassDescription, PipelineBindPoint, AttachmentStoreOp, RenderPassCreateInfo, RenderPass, SubpassDependency, self, AccessFlags, PipelineStageFlags};
 
 use super::swapchain::SwapchainCtx;
 
@@ -33,9 +33,19 @@ impl RenderPassCtx {
             .color_attachments(&attachment_refs)
             .build();
         let subpass_descs = [subpass_desc];
+        let subpass_dep = SubpassDependency::builder()
+            .src_subpass(vk::SUBPASS_EXTERNAL)
+            .dst_subpass(0)
+            .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .src_access_mask(AccessFlags::empty())
+            .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+            .dst_access_mask(AccessFlags::COLOR_ATTACHMENT_READ | AccessFlags::COLOR_ATTACHMENT_WRITE)
+            .build();
+        let subpass_deps = [subpass_dep];
         let render_pass_info = RenderPassCreateInfo::builder()
             .attachments(&attachment_descs)
             .subpasses(&subpass_descs)
+            .dependencies(&subpass_deps)
             .build();
 
         let render_pass = unsafe { swapchain_ctx.device_ctx.logical_info.device.create_render_pass(&render_pass_info, None)? };

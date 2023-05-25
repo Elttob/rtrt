@@ -1,6 +1,6 @@
 use std::{ptr, ffi::c_void, sync::Arc, rc::Rc};
 use anyhow::Result;
-use ash::{extensions::khr::{Win32Surface, Surface}, Entry, Instance, vk::{self, PhysicalDevice, SurfaceCapabilitiesKHR, SurfaceFormatKHR, PresentModeKHR}};
+use ash::{extensions::khr::{Win32Surface, Surface}, Entry, Instance, vk};
 use winit::{window::Window, platform::windows::WindowExtWindows};
 use winapi::{shared::windef::HWND, um::libloaderapi::GetModuleHandleW};
 
@@ -35,22 +35,6 @@ pub struct SurfaceCtx {
 }
 
 impl SurfaceCtx {
-    pub fn swapchain_support_details(
-        &self,
-        physical_device: PhysicalDevice
-    ) -> Result<SwapchainSupportDetails> {
-        let capabilities = unsafe { self.surface.get_physical_device_surface_capabilities(physical_device, self.surface_khr)? };
-        let formats = unsafe { self.surface.get_physical_device_surface_formats(physical_device, self.surface_khr)? };
-        let present_modes = unsafe { self.surface.get_physical_device_surface_present_modes(physical_device, self.surface_khr)? };
-        Ok(SwapchainSupportDetails {
-            capabilities,
-            formats,
-            present_modes,
-        })
-    }
-}
-
-impl SurfaceCtx {
     pub fn new(
         instance_ctx: Rc<InstanceCtx>,
         window: Arc<Window>
@@ -74,12 +58,4 @@ impl Drop for SurfaceCtx {
         }
         log::debug!("SurfaceCtx dropped");
     }
-}
-
-// SUPPORTING TYPES
-
-pub struct SwapchainSupportDetails {
-    pub capabilities: SurfaceCapabilitiesKHR,
-    pub formats: Vec<SurfaceFormatKHR>,
-    pub present_modes: Vec<PresentModeKHR>,
 }

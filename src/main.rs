@@ -74,7 +74,7 @@ fn main() -> Result<()> {
                 // scene.camera.position += snapshot.move_axes.z * move_speed * pitch_yaw::look_dir(scene.camera.pitch_yaw_radians);
                 // scene.camera.position += snapshot.move_axes.y * move_speed * Vec3::Y;
                 // scene.camera.position += snapshot.move_axes.x * move_speed * pitch_yaw::flat_right_vec(scene.camera.pitch_yaw_radians.y);
-                renderer.render().unwrap();
+                let _did_render_frame = renderer.render().unwrap();
             }
             _ => (),
         });
