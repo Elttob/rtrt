@@ -186,6 +186,8 @@ impl Renderer {
         let acquire_result = unsafe { swapchain.swapchain.acquire_next_image(
             swapchain.swapchain_khr, std::u64::MAX, image_available_semaphore, Fence::null()
         ) };
+
+        // TODO Oh hey this might be a problem. The command buffer won't target this image index.
         let image_index = match acquire_result {
             Ok((image_index, _suboptimal)) => image_index,
             Err(vk::Result::ERROR_OUT_OF_DATE_KHR) => {
