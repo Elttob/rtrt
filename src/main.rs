@@ -197,7 +197,7 @@ fn main() -> Result<()> {
                     };
                     if out_of_date || non_optimal_count >= non_optimal_limit {
                         surface.update()?;
-                        view_cache.next_epoch(); // TODO fix this
+                        view_cache.evict(std::u64::MAX);
                         non_optimal_count = 0;
                     }
                     scope.reset();
