@@ -32,11 +32,11 @@ pub struct CameraUniforms {
 
 #[spirv(vertex)]
 pub fn main_vs(
-    in_camera_uniforms: CameraUniforms,
+    #[spirv(push_constant)] in_camera_uniforms: &CameraUniforms,
     #[spirv(vertex_index)] vertex_index: i32,
     #[spirv(position, invariant)] out_position: &mut Vec4,
     out_colour: &mut Vec3
 ) {
-    *out_position = POSITIONS[vertex_index as usize].extend(0.0).extend(1.0);
-    *out_colour = in_camera_uniforms.proj.col(1).truncate();
+    *out_position = in_camera_uniforms.proj * in_camera_uniforms.view * POSITIONS[vertex_index as usize].extend(0.0).extend(1.0);
+    *out_colour = COLOURS[vertex_index as usize];
 }

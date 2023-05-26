@@ -9,12 +9,12 @@ use crate::scene::{Camera, Scene};
 
 #[derive(sierra::PipelineInput)]
 struct PipelineInput {
-    #[sierra(push(std140), vertex)]
+    #[sierra(push(std430), vertex)]
     camera: CameraUniforms
 }
 
 #[derive(Clone, Copy, ShaderRepr)]
-#[sierra(std140)]
+#[sierra(std430)]
 struct CameraUniforms {
     proj: sierra::mat4,
     view: sierra::mat4
@@ -174,6 +174,7 @@ impl Renderer<'_> {
             render_pass_encoder.bind_dynamic_graphics_pipeline(&mut self.graphics_pipeline, &self.device)?;
             // render_pass_encoder.bind_vertex_buffers(0, &mut [(&self.scene_data.vertex_buffer, self.scene_data.vertex_buffer_offset)]);
             // render_pass_encoder.draw(0..self.scene_data.vertex_count, 0..1);
+            dbg!(CameraUniforms::from_camera(camera).proj);
             render_pass_encoder.push_constants(&self.pipeline_layout, &CameraUniforms::from_camera(camera));
             render_pass_encoder.draw(0..3, 0..1);
         }
