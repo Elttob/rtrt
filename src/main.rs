@@ -52,7 +52,8 @@ fn main() -> Result<()> {
         pitch_yaw_radians: vec2(0.0, 0.0),
         fov_radians: 1.5,
         z_near: 0.1,
-        z_far: 100.0
+        z_far: 100.0,
+        aspect_ratio: window.inner_size().width as f32 / window.inner_size().height as f32
     };
     let mut cursor_over_window = false;
 
@@ -89,8 +90,8 @@ fn main() -> Result<()> {
                     camera.position += snapshot.move_axes.z * move_speed * pitch_yaw::look_dir(camera.pitch_yaw_radians);
                     camera.position += snapshot.move_axes.y * move_speed * vec3(0.0, 1.0, 0.0);
                     camera.position += snapshot.move_axes.x * move_speed * pitch_yaw::flat_right_vec(camera.pitch_yaw_radians.y);
-                    
-                    renderer.render()?
+                    camera.aspect_ratio = window.inner_size().width as f32 / window.inner_size().height as f32;
+                    renderer.render(&camera)?
                 },
                 _ => {}
             };

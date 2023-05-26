@@ -14,15 +14,15 @@ pub struct Camera {
     pub pitch_yaw_radians: Vec2,
     pub fov_radians: f32,
     pub z_near: f32,
-    pub z_far: f32
+    pub z_far: f32,
+    pub aspect_ratio: f32
 }
 
 impl Camera {
     pub fn to_projection_matrix(
         &self,
-         aspect_ratio: f32
     ) -> Mat4 {
-        Mat4::from_scale(glam::vec3(1.0, -1.0, 1.0)) * Mat4::perspective_lh(self.fov_radians, aspect_ratio, self.z_near, self.z_far)
+        Mat4::from_scale(glam::vec3(1.0, -1.0, 1.0)) * Mat4::perspective_lh(self.fov_radians, self.aspect_ratio, self.z_near, self.z_far)
     }
 
     pub fn to_view_matrix(

@@ -9,14 +9,8 @@ use crate::scene::{Camera, Scene};
 
 #[derive(sierra::PipelineInput)]
 struct PipelineInput {
-    #[sierra(set)]
-    set: PipelineDescriptors
-}
-
-#[derive(sierra::Descriptors)]
-struct PipelineDescriptors {
-    #[sierra(uniform, stages(vertex, fragment))]
-    camera_uniforms: CameraUniforms
+    #[sierra(push(std140), vertex)]
+    camera: CameraUniforms
 }
 
 #[derive(Clone, Copy, ShaderRepr)]
@@ -29,10 +23,9 @@ struct CameraUniforms {
 impl CameraUniforms {
     pub fn from_camera(
         camera: &Camera,
-        aspect_ratio: f32
     ) -> Self {
         Self {
-            proj: camera.to_projection_matrix(aspect_ratio).to_cols_array_2d().into(),
+            proj: camera.to_projection_matrix().to_cols_array_2d().into(),
             view: camera.to_view_matrix().to_cols_array_2d().into(),
         }
     }
@@ -50,6 +43,7 @@ pub struct Renderer<'a> {
     surface: Surface,
     device: Device,
     queue: Queue,
+    pipeline_layout: PipelineInputLayout,
     graphics_pipeline: DynamicGraphicsPipeline,
     view_cache: ImageViewCache,
 
@@ -128,6 +122,7 @@ impl Renderer<'_> {
             surface,
             device,
             queue,
+            pipeline_layout,
             graphics_pipeline,
             view_cache,
 
@@ -147,7 +142,8 @@ impl Renderer<'_> {
     }
 
     pub fn render(
-        &mut self
+        &mut self,
+        camera: &Camera
     ) -> Result<()> {
         if let Some(fence) = &mut self.fences[self.fence_index] {
             self.device.wait_fences(&mut [fence], true)?;
@@ -178,6 +174,7 @@ impl Renderer<'_> {
             render_pass_encoder.bind_dynamic_graphics_pipeline(&mut self.graphics_pipeline, &self.device)?;
             // render_pass_encoder.bind_vertex_buffers(0, &mut [(&self.scene_data.vertex_buffer, self.scene_data.vertex_buffer_offset)]);
             // render_pass_encoder.draw(0..self.scene_data.vertex_count, 0..1);
+            render_pass_encoder.push_constants(&self.pipeline_layout, &CameraUniforms::from_camera(camera));
             render_pass_encoder.draw(0..3, 0..1);
         }
 
