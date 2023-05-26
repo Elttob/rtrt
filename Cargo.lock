@@ -1224,6 +1224,7 @@ name = "rtrt"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "env_logger",
  "glam 0.24.0",
  "gltf",

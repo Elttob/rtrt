@@ -17,6 +17,7 @@ strum = "0.24"
 strum_macros = "0.24"
 sierra = "0.6.0"
 scoped-arena = "0.4.1"
+bytemuck = "1.13.1"
 
 [build-dependencies]
 anyhow = "1.0.71"

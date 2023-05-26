@@ -2,6 +2,8 @@ use anyhow::Result;
 use glam::{Mat4, Vec3, Vec2};
 use obj::Obj;
 
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+#[repr(C)]
 pub struct GeoVertex {
     pub position: [f32; 3],
     pub normal: [f32; 3]
@@ -33,32 +35,23 @@ impl Camera {
 }
 
 pub struct Scene {
-    pub geometry: Vec<GeoVertex>,
-    pub camera: Camera
+    pub vertices: Vec<GeoVertex>
 }
 
 impl Scene {
     pub fn from_obj_righthanded(
         obj: Obj<obj::Vertex, u16>
     ) -> Result<Self> {
-        let geometry = obj.indices.iter()
+        let vertices = obj.indices.iter()
             .map(|index| *obj.vertices.get(*index as usize).unwrap())
             .map(|vertex| GeoVertex {
                 position: [vertex.position[0], vertex.position[1], -vertex.position[2]],
                 normal: [vertex.normal[0], vertex.normal[1], -vertex.normal[2]]
             })
             .collect();
-        let camera = Camera {
-            position: Vec3::ZERO,
-            pitch_yaw_radians: Vec2::ZERO,
-            fov_radians: 1.5,
-            z_near: 0.1,
-            z_far: 100.0
-        };
 
         Ok(Self {
-            geometry,
-            camera
+            vertices
         })
     }
 }

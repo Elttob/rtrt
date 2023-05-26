@@ -7,7 +7,7 @@ use glam::{vec2, vec3};
 use obj::load_obj;
 use winit::{window::{WindowBuilder, Window}, event_loop::{EventLoop, ControlFlow}, event::{Event, WindowEvent}};
 
-use crate::{render::Renderer, input::Input, scene::Scene};
+use crate::{render::Renderer, input::Input, scene::{Scene, Camera}};
 
 mod input;
 mod pitch_yaw;
@@ -43,10 +43,17 @@ fn main() -> Result<()> {
     log::debug!("Starting!");
 
     let (event_loop, window) = create_window()?;
-    let mut renderer = Renderer::new(&window)?;
+    let scene = Scene::from_obj_righthanded(load_obj(BufReader::new(File::open("in/duskroom_simple.obj")?))?)?;
+    let mut renderer = Renderer::new(&window, &scene)?;
+
     let mut input = Input::new(vec2(0.0, 0.0));
-    let mut scene = Scene::from_obj_righthanded(load_obj(BufReader::new(File::open("in/duskroom_simple.obj")?))?)?;
-    
+    let mut camera = Camera {
+        position: vec3(0.0, 0.0, 0.0),
+        pitch_yaw_radians: vec2(0.0, 0.0),
+        fov_radians: 1.5,
+        z_near: 0.1,
+        z_far: 100.0
+    };
     let mut cursor_over_window = false;
 
     window.set_visible(true);
@@ -77,11 +84,11 @@ fn main() -> Result<()> {
                 Event::MainEventsCleared => window.request_redraw(),
                 Event::RedrawRequested(window_id) if window_id == window.id() => {
                     let snapshot = input.snapshot();
-                    scene.camera.pitch_yaw_radians = snapshot.pitch_yaw_radians;
+                    camera.pitch_yaw_radians = snapshot.pitch_yaw_radians;
                     let move_speed = 2.0 / 144.0;
-                    scene.camera.position += snapshot.move_axes.z * move_speed * pitch_yaw::look_dir(scene.camera.pitch_yaw_radians);
-                    scene.camera.position += snapshot.move_axes.y * move_speed * vec3(0.0, 1.0, 0.0);
-                    scene.camera.position += snapshot.move_axes.x * move_speed * pitch_yaw::flat_right_vec(scene.camera.pitch_yaw_radians.y);
+                    camera.position += snapshot.move_axes.z * move_speed * pitch_yaw::look_dir(camera.pitch_yaw_radians);
+                    camera.position += snapshot.move_axes.y * move_speed * vec3(0.0, 1.0, 0.0);
+                    camera.position += snapshot.move_axes.x * move_speed * pitch_yaw::flat_right_vec(camera.pitch_yaw_radians.y);
                     
                     renderer.render()?
                 },

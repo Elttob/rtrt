@@ -2,8 +2,10 @@ use std::{fs::File, io::Read};
 
 use anyhow::{Result, Context, bail};
 use scoped_arena::Scope;
-use sierra::{Device, Fence, Surface, Queue, ImageViewCache, DynamicGraphicsPipeline, ShaderRepr};
+use sierra::{Device, Fence, Surface, Queue, ImageViewCache, DynamicGraphicsPipeline, ShaderRepr, Buffer, BufferUsage, BufferInfo};
 use winit::window::Window;
+
+use crate::scene::{Camera, Scene};
 
 #[derive(sierra::PipelineInput)]
 struct PipelineInput {
@@ -24,6 +26,24 @@ struct CameraUniforms {
     view: sierra::mat4
 }
 
+impl CameraUniforms {
+    pub fn from_camera(
+        camera: &Camera,
+        aspect_ratio: f32
+    ) -> Self {
+        Self {
+            proj: camera.to_projection_matrix(aspect_ratio).to_cols_array_2d().into(),
+            view: camera.to_view_matrix().to_cols_array_2d().into(),
+        }
+    }
+}
+
+struct SceneData {
+    pub vertex_buffer: Buffer,
+    pub vertex_buffer_offset: u64,
+    pub vertex_count: u32
+}
+
 pub struct Renderer<'a> {
     scope: Scope<'a>,
 
@@ -32,6 +52,8 @@ pub struct Renderer<'a> {
     queue: Queue,
     graphics_pipeline: DynamicGraphicsPipeline,
     view_cache: ImageViewCache,
+
+    scene_data: SceneData,
 
     fences: Vec<Option<Fence>>,
     fence_index: usize,
@@ -43,7 +65,8 @@ impl Renderer<'_> {
     pub const FRAMES_IN_FLIGHT: usize = 3;
 
     pub fn new(
-        window: &Window
+        window: &Window,
+        scene: &Scene
     ) -> Result<Self> {
         let scope = Scope::new();
         let graphics = sierra::Graphics::get_or_init()?;
@@ -79,6 +102,25 @@ impl Renderer<'_> {
         ));
 
         let view_cache = sierra::ImageViewCache::new();
+
+        let scene_data = {
+            let vertex_data = bytemuck::cast_slice(&scene.vertices) as &[u8];
+
+            let vertex_buffer = device.create_buffer_static(
+                BufferInfo {
+                    align: 255,
+                    size: vertex_data.len() as u64,
+                    usage: BufferUsage::VERTEX
+                },
+                vertex_data
+            )?;
+
+            SceneData {
+                vertex_buffer,
+                vertex_buffer_offset: 0, 
+                vertex_count: scene.vertices.len() as u32
+            }
+        };
         
         Ok(Self {
             scope,
@@ -88,6 +130,8 @@ impl Renderer<'_> {
             queue,
             graphics_pipeline,
             view_cache,
+
+            scene_data,
 
             fences: (0..Self::FRAMES_IN_FLIGHT).into_iter().map(|_| None).collect(),
             fence_index: 0,
@@ -132,6 +176,8 @@ impl Renderer<'_> {
                 ),
             );
             render_pass_encoder.bind_dynamic_graphics_pipeline(&mut self.graphics_pipeline, &self.device)?;
+            // render_pass_encoder.bind_vertex_buffers(0, &mut [(&self.scene_data.vertex_buffer, self.scene_data.vertex_buffer_offset)]);
+            // render_pass_encoder.draw(0..self.scene_data.vertex_count, 0..1);
             render_pass_encoder.draw(0..3, 0..1);
         }
 
