@@ -13,10 +13,10 @@ gltf = "1.1.0"
 log = "0.4.17"
 obj-rs = "0.7.1"
 winit = "0.28.6"
-ash = { version = "0.37.2", features = ["linked"] }
 strum = "0.24"
 strum_macros = "0.24"
-winapi = "0.3.6"
+sierra = "0.6.0"
+scoped-arena = "0.4.1"
 
 [build-dependencies]
 anyhow = "1.0.71"
