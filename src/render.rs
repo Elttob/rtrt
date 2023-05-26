@@ -2,17 +2,26 @@ use std::{fs::File, io::Read};
 
 use anyhow::{Result, Context, bail};
 use scoped_arena::Scope;
-use sierra::{Device, Fence, Surface, Queue, ImageViewCache, DynamicGraphicsPipeline};
+use sierra::{Device, Fence, Surface, Queue, ImageViewCache, DynamicGraphicsPipeline, ShaderRepr};
 use winit::window::Window;
 
 #[derive(sierra::PipelineInput)]
 struct PipelineInput {
-    
+    #[sierra(set)]
+    set: PipelineDescriptors
 }
 
 #[derive(sierra::Descriptors)]
-struct Descriptors {
-    
+struct PipelineDescriptors {
+    #[sierra(uniform, stages(vertex, fragment))]
+    camera_uniforms: CameraUniforms
+}
+
+#[derive(Clone, Copy, ShaderRepr)]
+#[sierra(std140)]
+struct CameraUniforms {
+    proj: sierra::mat4,
+    view: sierra::mat4
 }
 
 pub struct Renderer<'a> {
@@ -21,10 +30,8 @@ pub struct Renderer<'a> {
     surface: Surface,
     device: Device,
     queue: Queue,
-    pipeline_layout: PipelineInputLayout,
     graphics_pipeline: DynamicGraphicsPipeline,
     view_cache: ImageViewCache,
-
 
     fences: Vec<Option<Fence>>,
     fence_index: usize,
@@ -79,7 +86,6 @@ impl Renderer<'_> {
             surface,
             device,
             queue,
-            pipeline_layout,
             graphics_pipeline,
             view_cache,
 
